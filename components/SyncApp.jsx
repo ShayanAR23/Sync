@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Settings, Sun, Moon, CalendarDays, PartyPopper, MessageCircle, Compass } from "lucide-react";
-import { SyncMark, SyncLogo } from "./Logo";
+import dynamic from "next/dynamic";
+import { Settings, Sun, Moon, CalendarDays, PartyPopper, MessageCircle, Users, Camera } from "lucide-react";
+// Client-only: its slide animation seeds a randomized layout per mount,
+// which must never be part of the server-rendered HTML (would mismatch
+// on hydration since the server and client would each roll different values).
+const IntroStory = dynamic(() => import("./IntroStory"), { ssr: false });
 import { Avatar, AvatarPicker } from "./Avatar";
 import { BackgroundPicker } from "./BackgroundPicker";
 import { PhoneShell, BottomTabBar } from "./PhoneShell";
@@ -12,6 +16,48 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8); // 8am - 11pm
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTH_NAMES_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+// Default per-month look for the hero calendar — a themed gradient + big
+// motif icon, overridable per year-month with a custom uploaded image.
+const MONTH_THEMES = [
+  { grad: "linear-gradient(160deg,#1e3a5f 0%,#0f2540 100%)", icon: "❄️" },
+  { grad: "linear-gradient(160deg,#5b2a6e 0%,#2e1440 100%)", icon: "💘" },
+  { grad: "linear-gradient(160deg,#2f5f4a 0%,#163326 100%)", icon: "🌱" },
+  { grad: "linear-gradient(160deg,#3f7a3a 0%,#1e3d19 100%)", icon: "🌷" },
+  { grad: "linear-gradient(160deg,#6a8f3a 0%,#33450f 100%)", icon: "🌸" },
+  { grad: "linear-gradient(160deg,#c98a1f 0%,#7a4f0a 100%)", icon: "☀️" },
+  { grad: "linear-gradient(160deg,#d9541f 0%,#7a2a0a 100%)", icon: "🎆" },
+  { grad: "linear-gradient(160deg,#c9781f 0%,#6e3d0a 100%)", icon: "🏖️" },
+  { grad: "linear-gradient(160deg,#a05a2a 0%,#4f2a10 100%)", icon: "🍂" },
+  { grad: "linear-gradient(160deg,#9a4a1f 0%,#4a1f0a 100%)", icon: "🎃" },
+  { grad: "linear-gradient(160deg,#6a4a2a 0%,#2a1a10 100%)", icon: "🦃" },
+  { grad: "linear-gradient(160deg,#1c3a5f 0%,#0a1a30 100%)", icon: "🎄" },
+];
+
+// Fixed-date holidays (month is 1-indexed to match everyday date labels).
+const FIXED_HOLIDAYS = [
+  { month: 1, day: 1, name: "New Year's Day", icon: "🎆" },
+  { month: 2, day: 14, name: "Valentine's Day", icon: "💘" },
+  { month: 3, day: 17, name: "St. Patrick's Day", icon: "🍀" },
+  { month: 7, day: 4, name: "Independence Day", icon: "🎇" },
+  { month: 10, day: 31, name: "Halloween", icon: "🎃" },
+  { month: 12, day: 25, name: "Christmas", icon: "🎄" },
+  { month: 12, day: 31, name: "New Year's Eve", icon: "🥂" },
+];
+// nth (1-based) occurrence of a weekday (0=Sun) in a given month/year.
+function nthWeekdayOfMonth(year, month, weekday, n) {
+  const first = new Date(year, month - 1, 1);
+  const offset = (weekday - first.getDay() + 7) % 7;
+  return 1 + offset + (n - 1) * 7;
+}
+function holidayForDate(d) {
+  const month = d.getMonth() + 1, day = d.getDate(), year = d.getFullYear();
+  const fixed = FIXED_HOLIDAYS.find((h) => h.month === month && h.day === day);
+  if (fixed) return fixed;
+  if (month === 11 && day === nthWeekdayOfMonth(year, 11, 4, 4)) return { name: "Thanksgiving", icon: "🦃" };
+  return null;
+}
 
 const TZ_OPTIONS = [
   { label: "Pacific (PT)", offset: -8 },
@@ -21,6 +67,18 @@ const TZ_OPTIONS = [
   { label: "GMT", offset: 0 },
   { label: "Central Europe (CET)", offset: 1 },
 ];
+
+// Half-hour time-of-day options, e.g. "7:00 PM", for the propose-a-date form.
+const TIME_OPTIONS = (() => {
+  const out = [];
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      const hour12 = h % 12 === 0 ? 12 : h % 12;
+      out.push(`${hour12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`);
+    }
+  }
+  return out;
+})();
 
 function hourLabel(h) {
   if (h === 12) return "12p";
@@ -44,22 +102,6 @@ const COLOR_PALETTE = [
 ];
 const GROUP_SHAPES = ["●", "■", "▲", "◆", "★", "⬟", "✚", "◼"];
 
-const INTERESTS = ["Music", "Food & Drink", "Outdoors", "Arts & Culture", "Sports", "Family", "Nightlife", "Learning"];
-
-const EVENTS = [
-  { name: "Live at the Backyard: Local Jazz Trio", tags: ["Music", "Nightlife"], date: "Fri, Aug 14", time: "8:00 PM", location: "South Congress" },
-  { name: "Zilker Park Sunset Yoga", tags: ["Outdoors", "Family"], date: "Sat, Aug 15", time: "7:30 AM", location: "Zilker Park" },
-  { name: "Farmers Market on the Green", tags: ["Food & Drink", "Family"], date: "Sat, Aug 15", time: "9:00 AM", location: "The Domain" },
-  { name: "Barton Springs Community Swim", tags: ["Outdoors", "Family"], date: "Sun, Aug 16", time: "10:00 AM", location: "Barton Springs" },
-  { name: "Contemporary Sculpture Walkthrough", tags: ["Arts & Culture", "Learning"], date: "Sun, Aug 16", time: "1:00 PM", location: "The Contemporary" },
-  { name: "Rooftop Trivia Night", tags: ["Nightlife", "Learning"], date: "Wed, Aug 19", time: "7:00 PM", location: "Rainey Street" },
-  { name: "Austin FC Watch Party", tags: ["Sports", "Nightlife"], date: "Thu, Aug 20", time: "6:30 PM", location: "Q2 Stadium Plaza" },
-  { name: "Pottery for Beginners Workshop", tags: ["Arts & Culture", "Learning"], date: "Sat, Aug 22", time: "11:00 AM", location: "East Austin Studio" },
-  { name: "Taco & Tequila Crawl", tags: ["Food & Drink", "Nightlife"], date: "Sat, Aug 22", time: "5:00 PM", location: "East 6th Street" },
-  { name: "Family Kite Festival", tags: ["Family", "Outdoors"], date: "Sun, Aug 23", time: "10:00 AM", location: "Auditorium Shores" },
-  { name: "Greenbelt Trail Run Meetup", tags: ["Outdoors", "Sports"], date: "Sun, Aug 23", time: "8:00 AM", location: "Barton Creek Greenbelt" },
-  { name: "Open Mic Poetry & Coffee", tags: ["Arts & Culture", "Music"], date: "Mon, Aug 24", time: "7:00 PM", location: "North Loop" },
-];
 
 // ---- date helpers ----
 function next12Months(start = new Date()) {
@@ -90,6 +132,10 @@ function isToday(d) {
 function niceDateLabel(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return `${MONTH_NAMES[m - 1]} ${d}`;
+}
+function fullDateLabel(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${MONTH_NAMES_FULL[m - 1]} ${d}, ${y}`;
 }
 function daysFromToday(iso) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -156,6 +202,16 @@ function tentativePattern(hex) {
   return `repeating-linear-gradient(45deg, ${hexToRgba(hex, 0.45)} 0px, ${hexToRgba(hex, 0.45)} 3px, transparent 3px, transparent 6px)`;
 }
 
+// Maps any free/total fraction to a "filling up" moon phase — deliberately
+// only the waxing half of the lunar cycle (new -> full), since the waning
+// half would visually look like it's emptying back out. Fraction-based
+// (not headcount-based) so it scales to groups of any size, not just <=8.
+const MOON_PHASES = ["🌑", "🌒", "🌓", "🌔", "🌕"];
+function moonPhaseEmoji(fraction) {
+  const f = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 0;
+  return MOON_PHASES[Math.round(f * (MOON_PHASES.length - 1))];
+}
+
 const ALL_YEAR_KEYS = (() => {
   const keys = [];
   for (const { year, month } of next12Months()) {
@@ -169,7 +225,7 @@ const ALL_WEEK_KEYS = (() => {
   return keys;
 })();
 
-const TAB_TITLES = { groups: "Calendar", plans: "Plans", messages: "Messages", events: "Discover" };
+const TAB_TITLES = { groups: "My Calendar", friends: "Friends Calendars", plans: "Plans", messages: "Messages" };
 
 export default function SyncApp() {
   const [tab, setTab] = useState("groups"); // "groups" (personal calendar) | "plans" | "messages" | "events"
@@ -182,28 +238,13 @@ export default function SyncApp() {
   const [seenSnapshot, setSeenSnapshot] = useState({}); // { [proposalId]: { threadLen, rsvpJson } }
   const prevTabRef = useRef(tab);
   const [horizon, setHorizon] = useState("year"); // "week" | "year"
+  // Whose availability the Friends Calendars tab is showing: a group id, a person id, or "you".
+  const [friendsView, setFriendsView] = useState(null);
 
-  // ---- app-like intro slideshow, shown once on first visit ----
-  const ONBOARDING_SLIDES = [
-    { emoji: "👋", title: "Welcome to Sync", subtitle: "Close the distance, one day at a time. A shared calendar built for friends and family, not coworkers." },
-    { emoji: "🗓️", title: "See who's free", subtitle: "Mark your own availability, then instantly spot the days everyone in a group actually overlaps." },
-    { emoji: "🤝", title: "Turn free days into plans", subtitle: "Tap a shared free day to invite a group or a friend. They RSVP right in the app — no more group-chat chaos." },
-    { emoji: "💬", title: "Chat built in", subtitle: "Every plan gets its own conversation, so the details never get buried in fifty unrelated texts." },
-  ];
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [slideIndex, setSlideIndex] = useState(0);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem("sync_onboarded")) setShowOnboarding(true);
-  }, []);
+  // ---- app-like intro slideshow, shown on every load ----
+  const [showOnboarding, setShowOnboarding] = useState(true);
   const dismissOnboarding = () => {
-    if (typeof window !== "undefined") window.localStorage.setItem("sync_onboarded", "1");
     setShowOnboarding(false);
-    setSlideIndex(0);
-  };
-  const advanceSlide = () => {
-    if (slideIndex === ONBOARDING_SLIDES.length - 1) dismissOnboarding();
-    else setSlideIndex((i) => i + 1);
   };
 
   // ---- hero calendar (mini month + day detail) state ----
@@ -211,13 +252,16 @@ export default function SyncApp() {
   const [selectedDayIso, setSelectedDayIso] = useState(todayIso);
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  // { "YYYY-M": dataURL-or-gradient } — a custom background per calendar month, overriding MONTH_THEMES.
+  const [monthBackgrounds, setMonthBackgrounds] = useState({});
+  const [showMonthBgPicker, setShowMonthBgPicker] = useState(false);
 
   const [people, setPeople] = useState([
     { id: "you", name: "You", color: "#E4A94A", city: "Austin, TX", tz: -6 },
-    { id: "jordan", name: "Aadil", color: COLOR_PALETTE[0].hex, city: "Chicago, IL", tz: -6 },
-    { id: "maya", name: "Ahad", color: COLOR_PALETTE[1].hex, city: "Beijing, China", tz: 8 },
-    { id: "sarah", name: "Shayan", color: COLOR_PALETTE[2].hex, city: "New York, NY", tz: -5 },
-    { id: "chris", name: "Yaseen", color: COLOR_PALETTE[3].hex, city: "San Francisco, CA", tz: -8 },
+    { id: "jordan", name: "Aadil", color: COLOR_PALETTE[0].hex, city: "Chicago, IL", tz: -6, birthday: "11-03" },
+    { id: "maya", name: "Ahad", color: COLOR_PALETTE[1].hex, city: "Beijing, China", tz: 8, birthday: "06-21" },
+    { id: "sarah", name: "Shayan", color: COLOR_PALETTE[2].hex, city: "New York, NY", tz: -5, birthday: "09-25" },
+    { id: "chris", name: "Yaseen", color: COLOR_PALETTE[3].hex, city: "San Francisco, CA", tz: -8, birthday: "12-08" },
   ]);
   const peopleById = useMemo(() => Object.fromEntries(people.map((p) => [p.id, p])), [people]);
   const updatePerson = (id, patch) => setPeople((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -275,6 +319,7 @@ export default function SyncApp() {
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupColor, setNewGroupColor] = useState(COLOR_PALETTE[5].hex);
   const [newGroupMembers, setNewGroupMembers] = useState([]);
+  const [groupFormError, setGroupFormError] = useState("");
 
   const [proposals, setProposals] = useState([]);
   const [proposeDate, setProposeDate] = useState("");
@@ -284,9 +329,6 @@ export default function SyncApp() {
   const [proposeTitle, setProposeTitle] = useState("");
   const [proposeMessage, setProposeMessage] = useState("");
   const [showProposeForm, setShowProposeForm] = useState(false);
-
-  const [eventVotes, setEventVotes] = useState({}); // { proposalId: { eventIdx: [personId,...] } }
-  const [eventsContextId, setEventsContextId] = useState(null); // proposal id or null (default Austin)
 
   const [inspectedKey, setInspectedKey] = useState(null); // currently hovered/clicked day, Groups tab
   const [inspectedRangeEnd, setInspectedRangeEnd] = useState(null); // set when a multi-day bubble was clicked
@@ -338,8 +380,17 @@ export default function SyncApp() {
   };
 
   const paintRef = useRef({ painting: false, value: "free" });
-  const [selectedInterests, setSelectedInterests] = useState([]);
   const months = useMemo(() => next12Months(), []);
+
+  // Scroll the "Propose a date manually" section into view whenever it opens
+  // on the Friends Calendars tab — otherwise it can open far below the fold
+  // (behind the moon calendars) and look like the button did nothing.
+  const proposeFormRef = useRef(null);
+  useEffect(() => {
+    if (tab === "friends" && showProposeForm) {
+      proposeFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [tab, showProposeForm]);
 
   useEffect(() => {
     const stop = () => (paintRef.current.painting = false);
@@ -376,13 +427,14 @@ export default function SyncApp() {
     if (editingAsId === id) setEditingAsId("you");
   };
 
-  const toggleGroupMember = (id) => setNewGroupMembers((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
+  const toggleGroupMember = (id) => { setGroupFormError(""); setNewGroupMembers((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id])); };
   const createGroup = () => {
     const name = newGroupName.trim();
-    if (!name || newGroupMembers.length < 2) return;
+    if (!name) { setGroupFormError("Give the group a name first."); return; }
+    if (newGroupMembers.length < 2) { setGroupFormError("Pick at least 2 friends — one friend isn't a group, message them directly instead."); return; }
     const id = `${name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
     setGroups((g) => [...g, { id, name, color: newGroupColor, shape: GROUP_SHAPES[g.length % GROUP_SHAPES.length], memberIds: newGroupMembers }]);
-    setNewGroupName(""); setNewGroupMembers([]); setShowGroupForm(false);
+    setNewGroupName(""); setNewGroupMembers([]); setShowGroupForm(false); setGroupFormError("");
   };
   const removeGroup = (id) => {
     setGroups((g) => g.filter((x) => x.id !== id));
@@ -505,6 +557,50 @@ export default function SyncApp() {
     if (!text.trim()) return;
     setGroupThreads((prev) => ({ ...prev, [groupId]: [...(prev[groupId] || []), { id: `${groupId}-${Date.now()}`, personId: editingAsId, text: text.trim() }] }));
   };
+
+  // ---- message reactions (shared across proposal threads, DMs, and group chat) ----
+  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
+  const [reactionPickerFor, setReactionPickerFor] = useState(null);
+  const withToggledReaction = (message, emoji) => {
+    const reactions = { ...(message.reactions || {}) };
+    const users = new Set(reactions[emoji] || []);
+    if (users.has(editingAsId)) users.delete(editingAsId); else users.add(editingAsId);
+    if (users.size === 0) delete reactions[emoji]; else reactions[emoji] = Array.from(users);
+    return { ...message, reactions };
+  };
+  const toggleThreadReaction = (proposalId, messageId, emoji) => {
+    setProposals((ps) => ps.map((p) => (p.id !== proposalId ? p : { ...p, thread: p.thread.map((m) => (m.id === messageId ? withToggledReaction(m, emoji) : m)) })));
+  };
+  const toggleDmReaction = (key, messageId, emoji) => {
+    setDmThreads((prev) => ({ ...prev, [key]: (prev[key] || []).map((m) => (m.id === messageId ? withToggledReaction(m, emoji) : m)) }));
+  };
+  const toggleGroupReaction = (groupId, messageId, emoji) => {
+    setGroupThreads((prev) => ({ ...prev, [groupId]: (prev[groupId] || []).map((m) => (m.id === messageId ? withToggledReaction(m, emoji) : m)) }));
+  };
+  const MessageReactions = ({ message, onToggle }) => {
+    const entries = Object.entries(message.reactions || {}).filter(([, ids]) => ids.length > 0);
+    const pickerOpen = reactionPickerFor === message.id;
+    return (
+      <div className="flex items-center gap-1 flex-wrap mt-1.5 relative">
+        {entries.map(([emoji, ids]) => {
+          const mine = ids.includes(editingAsId);
+          return (
+            <button key={emoji} onClick={() => onToggle(emoji)} className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1" style={{ background: mine ? "rgba(255,122,26,0.18)" : "var(--ink-3)", border: `1px solid ${mine ? "var(--marigold)" : "transparent"}` }}>
+              <span>{emoji}</span><span className="mono" style={{ fontSize: 10, color: "var(--paper)" }}>{ids.length}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => setReactionPickerFor(pickerOpen ? null : message.id)} className="text-xs rounded-full px-1.5 py-0.5" style={{ background: "var(--ink-3)", color: "var(--mist)" }}>+</button>
+        {pickerOpen && (
+          <div className="flex items-center gap-1 rounded-full px-2 py-1 absolute z-10" style={{ top: "100%", left: 0, marginTop: 4, background: "var(--ink-4)", boxShadow: "0 8px 20px rgba(0,0,0,0.35)" }}>
+            {REACTION_EMOJIS.map((e) => (
+              <button key={e} onClick={() => { onToggle(e); setReactionPickerFor(null); }} className="text-sm">{e}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   const openPersonProfile = (id) => { setInspectingEntity({ type: "person", id }); setDmDraft(""); setShowCustomize(false); };
   const openGroupProfile = (id) => { setInspectingEntity({ type: "group", id }); setDmDraft(""); setShowCustomize(false); };
 
@@ -534,8 +630,6 @@ export default function SyncApp() {
     return participants.length > 0 && participants.every((id) => p.rsvps[id] === "yes");
   };
 
-  const confirmedProposals = useMemo(() => proposals.filter(proposalConfirmed), [proposals, groups]);
-
   const demoInviteSeeded = useRef(false);
   useEffect(() => {
     if (demoInviteSeeded.current) return;
@@ -561,19 +655,6 @@ export default function SyncApp() {
     }]);
   }, []);
 
-  const toggleEventVote = (proposalId, eventIdx) => {
-    setEventVotes((prev) => {
-      const bucket = { ...(prev[proposalId] || {}) };
-      const voters = new Set(bucket[eventIdx] || []);
-      if (voters.has(editingAsId)) voters.delete(editingAsId); else voters.add(editingAsId);
-      bucket[eventIdx] = Array.from(voters);
-      return { ...prev, [proposalId]: bucket };
-    });
-  };
-
-  const filteredEvents = selectedInterests.length === 0 ? EVENTS : EVENTS.filter((e) => e.tags.some((t) => selectedInterests.includes(t)));
-  const toggleInterest = (interest) => setSelectedInterests((prev) => (prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]));
-
   const upcomingByGroup = useMemo(() => {
     const result = {};
     for (const g of groups) {
@@ -587,14 +668,11 @@ export default function SyncApp() {
   // any proposal whose date range covers this day — powers the mini calendar dots + day detail panel
   const eventsOnDay = (iso) => proposals.filter((p) => iso >= p.dateKey && iso <= (p.endDateKey || p.dateKey));
 
-  const activeEventsContext = eventsContextId ? proposals.find((p) => p.id === eventsContextId) : null;
-  const activeEventsTarget = activeEventsContext ? proposalTarget(activeEventsContext) : null;
-
   const TABS = [
-    { id: "groups", label: "Calendar", icon: CalendarDays },
+    { id: "groups", label: "My Calendar", icon: CalendarDays },
+    { id: "friends", label: "Friends Calendars", icon: Users },
     { id: "plans", label: "Plans", icon: PartyPopper, badge: anyUnreadPlans },
     { id: "messages", label: "Messages", icon: MessageCircle, badge: anyUnreadMessages },
-    { id: "events", label: "Discover", icon: Compass },
   ];
 
   // ---- shared minimalist month-grid renderer (used in profile modals) ----
@@ -659,28 +737,19 @@ export default function SyncApp() {
               const tentMembers = memberPeople.filter((p) => getStatus(p.id, key) === "tentative");
               const total = memberPeople.length || 1;
               const frac = freeMembers.length / total;
-              const ringSize = compact ? 26 : 30;
-              const r = ringSize / 2 - 3;
-              const circumference = 2 * Math.PI * r;
-              const dash = (frac * circumference).toFixed(1);
-              const ringColor = g ? hexToRgba(g.color, 0.32 + frac * 0.68) : "var(--mist)";
               const isFull = freeMembers.length === total;
+              const cellDim = compact ? 26 : 30;
               const title = `${niceDateLabel(key)} · ${freeMembers.length}/${total} free` +
                 (freeMembers.length ? ` (${freeMembers.map((p) => p.name).join(", ")})` : "") +
                 (tentMembers.length ? ` · tentative: ${tentMembers.map((p) => p.name).join(", ")}` : "");
               return (
                 <div key={key}
                   onClick={() => onPick && onPick(key, key)}
-                  className="sync-daycell mx-auto flex items-center justify-center rounded-full"
-                  style={{ width: ringSize, height: ringSize, position: "relative", cursor: onPick ? "pointer" : "default", background: isFull ? g.color : "transparent" }}
+                  className="sync-daycell mx-auto flex flex-col items-center justify-center rounded-2xl"
+                  style={{ width: cellDim, height: cellDim, cursor: onPick ? "pointer" : "default", background: isFull ? hexToRgba(g?.color || "#888", 0.3) : "transparent" }}
                   title={title}>
-                  {freeMembers.length > 0 && !isFull && (
-                    <svg width={ringSize} height={ringSize} style={{ position: "absolute", top: 0, left: 0 }}>
-                      <circle cx={ringSize / 2} cy={ringSize / 2} r={r} fill="none" stroke="var(--ink-3)" strokeWidth="3" />
-                      <circle cx={ringSize / 2} cy={ringSize / 2} r={r} fill="none" stroke={ringColor} strokeWidth="3" strokeDasharray={`${dash} 999`} strokeLinecap="round" transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`} />
-                    </svg>
-                  )}
-                  <span className="mono" style={{ fontSize: 10, color: isFull ? "var(--on-accent)" : today ? "var(--paper)" : "var(--mist)", zIndex: 1 }}>{d.getDate()}</span>
+                  <span style={{ fontSize: compact ? 12 : 14, lineHeight: 1 }}>{moonPhaseEmoji(frac)}</span>
+                  <span className="mono" style={{ fontSize: 9, marginTop: 1, color: today ? "var(--paper)" : "var(--mist)" }}>{d.getDate()}</span>
                 </div>
               );
             }
@@ -693,49 +762,84 @@ export default function SyncApp() {
   };
 
   // ---- Fantastical-style mini month calendar with event-density dots ----
+  const birthdayPeopleFor = (d) => {
+    const key = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return people.filter((p) => p.birthday === key);
+  };
+
   const MiniCalendar = () => {
     const cells = monthGridCells(calYear, calMonth);
-    const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear((y) => y - 1); } else setCalMonth((m) => m - 1); };
-    const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear((y) => y + 1); } else setCalMonth((m) => m + 1); };
+    const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear((y) => y - 1); } else setCalMonth((m) => m - 1); setShowMonthBgPicker(false); };
+    const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear((y) => y + 1); } else setCalMonth((m) => m + 1); setShowMonthBgPicker(false); };
+    const monthKey = `${calYear}-${calMonth}`;
+    const customBg = monthBackgrounds[monthKey];
+    const theme = MONTH_THEMES[calMonth];
     return (
-      <div className="rounded-3xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} aria-label="Previous month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--mist)" }}>‹</button>
-          <p className="display text-lg" style={{ color: "var(--paper)" }}>{MONTH_NAMES[calMonth]} <span className="mono text-xs" style={{ color: "var(--mist)" }}>{calYear}</span></p>
-          <button onClick={nextMonth} aria-label="Next month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--mist)" }}>›</button>
-        </div>
-        <div className="grid grid-cols-7 mb-1">
-          {WEEKDAY_LETTERS.map((l, i) => (<div key={i} className="mono text-center" style={{ color: "var(--mist)", fontSize: 10, opacity: 0.55 }}>{l}</div>))}
-        </div>
-        <div className="grid grid-cols-7 gap-y-1.5">
-          {cells.map((d, i) => {
-            if (!d) return <div key={i} />;
-            const iso = isoDate(d);
-            const dayEvents = eventsOnDay(iso);
-            const importedHits = importedEventsOnDay(iso);
-            const today = isToday(d);
-            const selected = iso === selectedDayIso;
-            const dotColors = [
-              ...dayEvents.slice(0, 3).map((p) => (proposalTarget(p) || {}).color || "var(--marigold)"),
-              ...importedHits.slice(0, 3).map((h) => h.calColor),
-            ].slice(0, 3);
-            const totalCount = dayEvents.length + importedHits.length;
-            return (
-              <button key={iso} onClick={() => setSelectedDayIso(iso)}
-                className="sync-daycell flex flex-col items-center justify-center mx-auto rounded-2xl"
-                style={{
-                  width: 36, height: 36,
-                  background: selected ? "var(--marigold)" : "transparent",
-                  boxShadow: !selected && today ? "inset 0 0 0 1px var(--marigold)" : "none",
-                }}>
-                <span className="mono" style={{ fontSize: 12, color: selected ? "var(--on-accent)" : "var(--paper)" }}>{d.getDate()}</span>
-                <span style={{ display: "flex", gap: 2, height: 5, marginTop: 2, alignItems: "center" }}>
-                  {dotColors.map((c, idx) => (<span key={idx} style={{ width: 4, height: 4, borderRadius: "50%", background: selected ? "var(--on-accent)" : c }} />))}
-                  {totalCount > 3 && <span className="mono" style={{ fontSize: 7, color: selected ? "var(--on-accent)" : "var(--mist)" }}>+</span>}
-                </span>
-              </button>
-            );
-          })}
+      <div className="rounded-3xl overflow-hidden relative" style={{ border: "1px solid var(--ink-3)" }}>
+        <div
+          className="absolute inset-0"
+          style={{ backgroundImage: customBg ? (customBg.startsWith("data:") ? `url(${customBg})` : customBg) : theme.grad, backgroundSize: "cover", backgroundPosition: "center" }}
+        />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.55) 100%)" }} />
+        {!customBg && <span className="absolute pointer-events-none" style={{ fontSize: 90, right: -14, bottom: -18, opacity: 0.16 }}>{theme.icon}</span>}
+
+        <div className="relative p-4">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={prevMonth} aria-label="Previous month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--paper)" }}>‹</button>
+            <button onClick={() => setShowMonthBgPicker((s) => !s)} className="flex items-center gap-2">
+              <p className="display text-lg" style={{ color: "var(--paper)" }}>{MONTH_NAMES_FULL[calMonth]} <span className="mono text-xs" style={{ color: "rgba(245,245,247,0.75)" }}>{calYear}</span></p>
+              <Camera size={13} style={{ color: "rgba(245,245,247,0.75)" }} />
+            </button>
+            <button onClick={nextMonth} aria-label="Next month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--paper)" }}>›</button>
+          </div>
+
+          {showMonthBgPicker && (
+            <div className="rounded-xl p-3 mb-4" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(245,245,247,0.15)" }}>
+              <BackgroundPicker
+                value={customBg || null}
+                onChange={(bg) => setMonthBackgrounds((prev) => { const next = { ...prev }; if (bg) next[monthKey] = bg; else delete next[monthKey]; return next; })}
+                label={`${MONTH_NAMES_FULL[calMonth]} background`}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-7 mb-1">
+            {WEEKDAY_LETTERS.map((l, i) => (<div key={i} className="mono text-center" style={{ color: "rgba(245,245,247,0.6)", fontSize: 10 }}>{l}</div>))}
+          </div>
+          <div className="grid grid-cols-7 gap-y-1.5">
+            {cells.map((d, i) => {
+              if (!d) return <div key={i} />;
+              const iso = isoDate(d);
+              const dayEvents = eventsOnDay(iso);
+              const importedHits = importedEventsOnDay(iso);
+              const today = isToday(d);
+              const selected = iso === selectedDayIso;
+              const holiday = holidayForDate(d);
+              const birthdayPeople = birthdayPeopleFor(d);
+              const dotColors = [
+                ...dayEvents.slice(0, 3).map((p) => (proposalTarget(p) || {}).color || "var(--marigold)"),
+                ...importedHits.slice(0, 3).map((h) => h.calColor),
+              ].slice(0, 3);
+              const totalCount = dayEvents.length + importedHits.length;
+              return (
+                <button key={iso} onClick={() => setSelectedDayIso(iso)}
+                  className="sync-daycell flex flex-col items-center justify-center mx-auto rounded-2xl relative"
+                  style={{
+                    width: 36, height: 36,
+                    background: selected ? "var(--marigold)" : "transparent",
+                    boxShadow: !selected && today ? "inset 0 0 0 1px var(--marigold)" : "none",
+                  }}>
+                  {holiday && <span className="absolute" style={{ top: -3, left: -3, fontSize: 11 }} title={holiday.name}>{holiday.icon}</span>}
+                  {birthdayPeople.length > 0 && <span className="absolute" style={{ top: -3, right: -3, fontSize: 11 }} title={`${birthdayPeople.map((p) => p.name).join(", ")}'s birthday`}>🎂</span>}
+                  <span className="mono" style={{ fontSize: 12, color: selected ? "var(--on-accent)" : "var(--paper)" }}>{d.getDate()}</span>
+                  <span style={{ display: "flex", gap: 2, height: 5, marginTop: 2, alignItems: "center" }}>
+                    {dotColors.map((c, idx) => (<span key={idx} style={{ width: 4, height: 4, borderRadius: "50%", background: selected ? "var(--on-accent)" : c }} />))}
+                    {totalCount > 3 && <span className="mono" style={{ fontSize: 7, color: selected ? "var(--on-accent)" : "rgba(245,245,247,0.7)" }}>+</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -747,7 +851,7 @@ export default function SyncApp() {
     const importedHits = importedEventsOnDay(selectedDayIso);
     return (
       <div className="rounded-3xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-        <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>{niceDateLabel(selectedDayIso)}{selectedDayIso === todayIso ? <span className="mono text-xs ml-2" style={{ color: "var(--marigold)" }}>today</span> : ""}</p>
+        <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>{fullDateLabel(selectedDayIso)}{selectedDayIso === todayIso ? <span className="mono text-xs ml-2" style={{ color: "var(--marigold)" }}>today</span> : ""}</p>
         {dayEvents.length === 0 && importedHits.length === 0 ? (
           <div>
             <p className="text-sm mb-3" style={{ color: "var(--mist)" }}>Nothing planned yet.</p>
@@ -809,7 +913,7 @@ export default function SyncApp() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="display text-lg" style={{ color: "var(--paper)" }}>Up next</p>
-          <button onClick={() => setShowProposeForm(true)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>+ New plan</button>
+          <button onClick={() => { setTab("friends"); setShowProposeForm(true); }} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>+ New plan</button>
         </div>
         {upcoming.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--mist)" }}>No plans yet — pick a day above and invite a group or friend.</p>
@@ -858,54 +962,9 @@ export default function SyncApp() {
   };
 
   // =========================================================================
-  // Onboarding — the new brand mark shows up ONLY here, never in the main app
+  // Onboarding — the brand mark shows up ONLY here, never in the main app
   // =========================================================================
-  const OnboardingView = () => {
-    const slide = ONBOARDING_SLIDES[slideIndex];
-    const isLast = slideIndex === ONBOARDING_SLIDES.length - 1;
-    return (
-      <div className="w-full h-full flex flex-col" style={{ background: "linear-gradient(160deg, #FF9A3D 0%, #FF7A1A 55%, #F2650A 100%)" }}>
-        <div className="flex justify-between items-center px-6 pt-2 pb-2">
-          <span className="flex items-center gap-2">
-            <SyncMark size={20} />
-            <span style={{ fontWeight: 800, fontSize: 13, color: "#FFFFFF", letterSpacing: 2 }}>SYNC</span>
-          </span>
-          <button onClick={dismissOnboarding} className="text-sm" style={{ color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>Skip</button>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-          {slideIndex === 0 ? (
-            <div key={slideIndex} className="onboard-card mb-4">
-              <SyncLogo />
-            </div>
-          ) : (
-            <div
-              key={slideIndex}
-              className="onboard-card flex items-center justify-center mb-8"
-              style={{ width: 92, height: 92, background: "#FFFFFF", borderRadius: 28, fontSize: 42, boxShadow: "0 18px 40px rgba(0,0,0,0.25)" }}
-            >
-              {slide.emoji}
-            </div>
-          )}
-          <h1 style={{ fontWeight: 800, fontSize: 28, color: "#FFFFFF", maxWidth: 320, lineHeight: 1.15, letterSpacing: -0.5, marginBottom: 14, marginTop: slideIndex === 0 ? 6 : 0 }}>{slide.title}</h1>
-          <p style={{ color: "rgba(255,255,255,0.88)", fontSize: 15, maxWidth: 300, lineHeight: 1.5, fontWeight: 500 }}>{slide.subtitle}</p>
-        </div>
-        <div className="flex items-center justify-center gap-2 mb-6">
-          {ONBOARDING_SLIDES.map((_, i) => (
-            <span key={i} className="onboard-dot" style={{ height: 7, width: i === slideIndex ? 22 : 7, borderRadius: 999, background: i === slideIndex ? "#FFFFFF" : "rgba(255,255,255,0.35)" }} />
-          ))}
-        </div>
-        <div className="px-8 pb-8">
-          <button
-            onClick={advanceSlide}
-            className="w-full text-base rounded-full py-3.5"
-            style={{ background: "#FFFFFF", color: "#F2650A", fontWeight: 700 }}
-          >
-            {isLast ? "Get started" : "Next"}
-          </button>
-        </div>
-      </div>
-    );
-  };
+  const OnboardingView = () => <IntroStory onDone={dismissOnboarding} />;
 
   return (
     <PhoneShell
@@ -920,9 +979,6 @@ export default function SyncApp() {
           .sync-root.theme-light { --ink:#F5F5F7; --ink-2:#FFFFFF; --ink-3:#E5E5EA; --ink-4:#D1D1D6; --paper:#1D1D1F; --mist:#6E6E73; }
           .sync-root .display { font-family:'Inter', -apple-system, sans-serif; font-weight:700; letter-spacing:-0.02em; }
           .sync-root .mono { font-family:'Inter', -apple-system, sans-serif; font-weight:500; letter-spacing:-0.01em; }
-          .onboard-dot { transition: width 200ms ease, background-color 200ms ease; }
-          .onboard-card { animation: onboard-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-          @keyframes onboard-pop { from { transform: scale(0.7) rotate(-4deg); opacity: 0; } to { transform: scale(1) rotate(0deg); opacity: 1; } }
           .sync-cell { transition:background-color 120ms ease, transform 80ms ease; user-select:none; cursor:pointer; }
           .sync-cell:hover { transform:scale(1.05); }
           .sync-daycell { transition:background-color 120ms ease, transform 100ms ease; user-select:none; }
@@ -948,16 +1004,36 @@ export default function SyncApp() {
           <OnboardingView />
         ) : (
           <>
-            <header className="px-5 pt-1 pb-3 flex items-center justify-between">
+            <header className="px-5 pt-1 pb-3 flex items-center justify-between" style={{ position: "sticky", top: 0, zIndex: 25, background: "var(--ink)" }}>
               <p className="display text-2xl" style={{ color: "var(--paper)" }}>{TAB_TITLES[tab]}</p>
-              <button
-                onClick={() => setShowSettings(true)}
-                aria-label="Settings"
-                className="sync-icon-btn flex items-center justify-center rounded-full"
-                style={{ width: 34, height: 34, background: "var(--ink-2)", border: "1px solid var(--ink-3)", color: "var(--mist)" }}
-              >
-                <Settings size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                {people.length > 1 && (
+                  <button
+                    onClick={() => { setFriendsView(groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you"); setTab("friends"); }}
+                    aria-label="Friends' calendars"
+                    className="sync-icon-btn flex items-center justify-center rounded-full"
+                    style={{ width: 34, height: 34, background: "var(--ink-2)", border: "1px solid var(--ink-3)", color: "var(--mist)" }}
+                  >
+                    <Users size={16} />
+                  </button>
+                )}
+                <button
+                  onClick={() => openPersonProfile("you")}
+                  aria-label="Your profile"
+                  className="sync-icon-btn flex items-center justify-center rounded-full"
+                  style={{ width: 34, height: 34, border: "1px solid var(--ink-3)" }}
+                >
+                  <Avatar person={you} size={32} />
+                </button>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  aria-label="Settings"
+                  className="sync-icon-btn flex items-center justify-center rounded-full"
+                  style={{ width: 34, height: 34, background: "var(--ink-2)", border: "1px solid var(--ink-3)", color: "var(--mist)" }}
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
             </header>
 
             {tab === "groups" && (
@@ -993,6 +1069,11 @@ export default function SyncApp() {
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <div onClick={() => openPersonProfile("you")} className="sync-chip flex items-center gap-2 rounded-full pl-1 pr-3 py-1" style={{ border: "1px solid var(--marigold)" }}>
+                          <Avatar person={you} size={20} />
+                          <span className="text-sm" style={{ color: "var(--paper)" }}>You</span>
+                          <span className="mono text-xs" style={{ color: "var(--marigold)" }}>edit profile</span>
+                        </div>
                         {people.filter((p) => p.id !== "you" && p.name.toLowerCase().includes(peopleSearch.toLowerCase())).map((p) => (
                           <div key={p.id} onClick={() => openPersonProfile(p.id)} className="sync-chip flex items-center gap-2 rounded-full pl-1 pr-2 py-1" style={{ border: "1px solid var(--ink-3)" }}>
                             <Avatar person={p} size={20} />
@@ -1049,7 +1130,7 @@ export default function SyncApp() {
                           </div>
                         );})}
                         {!showGroupForm && (
-                          <button onClick={() => setShowGroupForm(true)} className="sync-add-btn flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: "transparent", border: "1px dashed var(--ink-3)", color: "var(--paper)" }}>
+                          <button onClick={() => { setShowGroupForm(true); setGroupFormError(""); }} className="sync-add-btn flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: "transparent", border: "1px dashed var(--ink-3)", color: "var(--paper)" }}>
                             <span className="flex items-center justify-center rounded-full" style={{ width: 18, height: 18, background: "var(--ink-3)", color: "var(--marigold)", fontSize: 13, lineHeight: 1 }}>+</span>
                             <span className="text-sm">New group</span>
                           </button>
@@ -1057,7 +1138,7 @@ export default function SyncApp() {
                       </div>
                       {showGroupForm && (
                         <div className="rounded-xl p-4 mt-3" style={{ background: "var(--ink)" }}>
-                          <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="Group name (e.g. Freshman Hall, Cousins)" className="text-sm rounded-full px-4 py-2 outline-none mb-3 w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <input value={newGroupName} onChange={(e) => { setNewGroupName(e.target.value); setGroupFormError(""); }} placeholder="Group name (e.g. Freshman Hall, Cousins)" className="text-sm rounded-full px-4 py-2 outline-none mb-3 w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                           <div className="flex items-center gap-2 mb-3 flex-wrap">
                             <span className="text-xs mono mr-1" style={{ color: "var(--mist)" }}>color</span>
                             {COLOR_PALETTE.map((c) => (<span key={c.hex} onClick={() => setNewGroupColor(c.hex)} className="sync-swatch inline-block rounded-full" style={{ width: 20, height: 20, background: c.hex, boxShadow: newGroupColor === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />))}
@@ -1075,20 +1156,12 @@ export default function SyncApp() {
                             })}
                             {people.length <= 1 && <span className="text-sm" style={{ color: "var(--mist)" }}>Add a friend above first.</span>}
                           </div>
+                          {groupFormError && <p className="text-xs mono mb-3" style={{ color: "var(--ember)" }}>{groupFormError}</p>}
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={createGroup}
-                              disabled={!newGroupName.trim() || newGroupMembers.length < 2}
-                              className="text-sm rounded-full px-4 py-2 display"
-                              style={{
-                                background: newGroupMembers.length < 2 || !newGroupName.trim() ? "var(--ink-3)" : "var(--marigold)",
-                                color: newGroupMembers.length < 2 || !newGroupName.trim() ? "var(--mist)" : "var(--on-accent)",
-                                cursor: newGroupMembers.length < 2 || !newGroupName.trim() ? "default" : "pointer",
-                              }}
-                            >
+                            <button onClick={createGroup} className="text-sm rounded-full px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>
                               Create group
                             </button>
-                            <button onClick={() => { setShowGroupForm(false); setNewGroupMembers([]); }} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                            <button onClick={() => { setShowGroupForm(false); setNewGroupMembers([]); setGroupFormError(""); }} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
                           </div>
                         </div>
                       )}
@@ -1096,42 +1169,135 @@ export default function SyncApp() {
                   )}
                 </section>
 
+              </main>
+            )}
+
+            {tab === "friends" && (() => {
+              const friendsViewId = friendsView || groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you";
+              const viewingGroup = groups.find((g) => g.id === friendsViewId) || null;
+              const viewingPerson = !viewingGroup ? (peopleById[friendsViewId] || you) : null;
+              const weekMode = viewingGroup ? "group" : (friendsViewId === "you" ? "mine" : "person");
+              const weekColor = viewingGroup ? viewingGroup.color : weekMode === "mine" ? editingAsPerson.color : viewingPerson.color;
+              const mondayOfThisWeek = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+
+              return (
+              <main className="px-5 pb-28">
+                <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>See how your availability lines up with everyone else's, then turn a shared free day into a plan.</p>
+
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {groups.map((g) => (
+                    <button key={g.id} onClick={() => setFriendsView(g.id)} className="sync-chip text-sm rounded-full px-3 py-1.5 flex items-center gap-1.5" style={{ background: friendsViewId === g.id ? g.color : "transparent", color: friendsViewId === g.id ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === g.id ? g.color : "var(--ink-3)"}` }}>
+                      <span>{g.shape}</span>{g.name}
+                    </button>
+                  ))}
+                  {people.filter((p) => p.id !== "you").map((p) => (
+                    <button key={p.id} onClick={() => setFriendsView(p.id)} className="sync-chip text-sm rounded-full pl-1 pr-3 py-1 flex items-center gap-1.5" style={{ background: friendsViewId === p.id ? p.color : "transparent", color: friendsViewId === p.id ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === p.id ? p.color : "var(--ink-3)"}` }}>
+                      <Avatar person={p} size={18} />{p.name}
+                    </button>
+                  ))}
+                  <button onClick={() => setFriendsView("you")} className="sync-chip text-sm rounded-full px-3 py-1.5" style={{ background: friendsViewId === "you" ? "var(--marigold)" : "transparent", color: friendsViewId === "you" ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === "you" ? "var(--marigold)" : "var(--ink-3)"}` }}>You</button>
+                </div>
+
                 {/* Horizon */}
-                <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>Mark your availability</p>
+                <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>
+                  {weekMode === "mine" ? "Mark your availability" : weekMode === "group" ? `${viewingGroup.name}'s availability` : `${viewingPerson.name}'s availability`}
+                </p>
                 <div className="flex items-center gap-1 mb-3 w-fit rounded-full p-1" style={{ background: "var(--ink-2)" }}>
                   <button onClick={() => setHorizon("week")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: horizon === "week" ? "var(--marigold)" : "transparent", color: horizon === "week" ? "var(--on-accent)" : "var(--mist)" }}>This Week</button>
                   <button onClick={() => setHorizon("year")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: horizon === "year" ? "var(--marigold)" : "transparent", color: horizon === "year" ? "var(--on-accent)" : "var(--mist)" }}>Next 12 Months</button>
                 </div>
 
                 <div className="flex items-center gap-3 mb-3 flex-wrap text-xs mono" style={{ color: "var(--mist)" }}>
-                  <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, border: "1px solid var(--ink-3)" }} />not marked</span>
-                  <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: editingAsPerson.color }} />free</span>
-                  <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: tentativePattern(editingAsPerson.color), border: `1px solid ${editingAsPerson.color}` }} />tentative</span>
+                  {weekMode === "group" ? (
+                    <>
+                      <span className="flex items-center gap-1">{moonPhaseEmoji(0)} nobody free</span>
+                      <span className="flex items-center gap-1">{moonPhaseEmoji(0.5)} half free</span>
+                      <span className="flex items-center gap-1">{moonPhaseEmoji(1)} everyone free</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, border: "1px solid var(--ink-3)" }} />not marked</span>
+                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: weekColor }} />free</span>
+                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: tentativePattern(weekColor), border: `1px solid ${weekColor}` }} />tentative</span>
+                    </>
+                  )}
+                  {weekMode !== "mine" && <span>· not editable — switch to "You" to mark your own</span>}
                 </div>
 
                 {horizon === "week" ? (
                   <section className="rounded-2xl p-3 overflow-x-auto sync-scroll" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-                    <div style={{ minWidth: 560 }}>
-                      <div className="grid" style={{ gridTemplateColumns: `44px repeat(7, 1fr)` }}>
+                    <div style={{ minWidth: 640 }}>
+                      <div className="grid mb-2" style={{ gridTemplateColumns: `40px repeat(7, 1fr)` }}>
                         <div />
-                        {DAYS.map((d) => (<div key={d} className="display text-center text-sm pb-2" style={{ color: "var(--paper)" }}>{d}</div>))}
+                        {DAYS.map((day, di) => {
+                          const date = new Date(mondayOfThisWeek);
+                          date.setDate(date.getDate() + di);
+                          const today = isToday(date);
+                          let dayFrac = null;
+                          if (weekMode === "group") {
+                            const memberIds = ["you", ...viewingGroup.memberIds];
+                            const fracs = HOURS.map((hour) => memberIds.filter((id) => getStatus(id, `${day}-${hour}`) === "free").length / memberIds.length);
+                            dayFrac = fracs.reduce((a, b) => a + b, 0) / fracs.length;
+                          }
+                          return (
+                            <div key={day} className="flex flex-col items-center gap-0.5">
+                              <span className="mono" style={{ fontSize: 9, color: today ? "var(--marigold)" : "var(--mist)" }}>{day.toUpperCase()}</span>
+                              <span className="mono flex items-center justify-center rounded-full" style={{ width: 22, height: 22, background: today ? "var(--marigold)" : "transparent", color: today ? "var(--on-accent)" : "var(--paper)", fontSize: 12 }}>{date.getDate()}</span>
+                              {dayFrac !== null && <span style={{ fontSize: 11 }} title={`${Math.round(dayFrac * 100)}% free on average`}>{moonPhaseEmoji(dayFrac)}</span>}
+                            </div>
+                          );
+                        })}
                       </div>
-                      {HOURS.map((hour) => (
-                        <div key={hour} className="grid items-center" style={{ gridTemplateColumns: `44px repeat(7, 1fr)` }}>
-                          <div className="mono text-xs text-right pr-2" style={{ color: "var(--mist)" }}>{hourLabel(hour)}</div>
-                          {DAYS.map((day) => {
-                            const key = `${day}-${hour}`;
-                            const status = getStatus(editingAsId, key);
-                            const bg = status === "free" ? editingAsPerson.color : status === "tentative" ? tentativePattern(editingAsPerson.color) : "var(--ink-3)";
-                            return (<div key={key} onMouseDown={() => handleMouseDown(key)} onMouseEnter={() => handleMouseEnter(key)} className="sync-cell m-[2px] rounded-md" style={{ height: 18, background: bg }} title={`${day} ${hourLabel(hour)} · ${status || "not marked"}`} />);
-                          })}
+                      <div className="grid" style={{ gridTemplateColumns: `40px repeat(7, 1fr)` }}>
+                        <div>
+                          {HOURS.map((hour) => (<div key={hour} className="mono text-xs text-right pr-2" style={{ height: 28, color: "var(--mist)" }}>{hourLabel(hour)}</div>))}
                         </div>
-                      ))}
+                        {DAYS.map((day) => {
+                          const getVal = (hour) => {
+                            if (weekMode === "group") {
+                              const memberIds = ["you", ...viewingGroup.memberIds];
+                              const free = memberIds.filter((id) => getStatus(id, `${day}-${hour}`) === "free").length;
+                              return Math.round((free / memberIds.length) * 8) / 8;
+                            }
+                            const targetId = weekMode === "mine" ? editingAsId : viewingPerson.id;
+                            return getStatus(targetId, `${day}-${hour}`) || null;
+                          };
+                          const runs = [];
+                          let cur = null;
+                          HOURS.forEach((hour, idx) => {
+                            const val = getVal(hour);
+                            const k = JSON.stringify(val);
+                            if (cur && cur.k === k) cur.len++;
+                            else { if (cur) runs.push(cur); cur = { k, val, start: idx, len: 1 }; }
+                          });
+                          if (cur) runs.push(cur);
+                          return (
+                            <div key={day} className="relative" style={{ height: 28 * HOURS.length }}>
+                              {HOURS.map((hour, idx) => (<div key={hour} style={{ position: "absolute", top: idx * 28, left: 0, right: 0, height: 28, borderTop: "1px solid var(--ink-3)" }} />))}
+                              {weekMode === "mine" && HOURS.map((hour, idx) => (
+                                <div key={hour} onMouseDown={() => handleMouseDown(`${day}-${hour}`)} onMouseEnter={() => handleMouseEnter(`${day}-${hour}`)} style={{ position: "absolute", top: idx * 28, left: 1, right: 1, height: 28, cursor: "pointer", zIndex: 2 }} />
+                              ))}
+                              {runs.map((run, ri) => {
+                                if (!run.val) return null;
+                                const bg = weekMode === "group" ? hexToRgba(weekColor, 0.2 + run.val * 0.7) : run.val === "free" ? weekColor : tentativePattern(weekColor);
+                                const label = weekMode !== "group" && run.len >= 2 ? (run.val === "free" ? "Free" : "Tentative") : null;
+                                return (
+                                  <div key={ri} style={{ position: "absolute", top: run.start * 28 + 1, left: 2, right: 2, height: run.len * 28 - 2, background: bg, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 1 }}>
+                                    {label && <span className="mono" style={{ fontSize: 9, color: "var(--on-accent)" }}>{label}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </section>
                 ) : (
                   <section className="grid grid-cols-1 gap-3">
-                    {months.map(({ year, month }) => (<MonthGrid key={`${year}-${month}`} year={year} month={month} mode="mine" />))}
+                    {months.map(({ year, month }) => (
+                      <MonthGrid key={`${year}-${month}`} year={year} month={month} mode={weekMode} personId={weekMode === "person" ? viewingPerson.id : undefined} groupId={weekMode === "group" ? viewingGroup.id : undefined} />
+                    ))}
                   </section>
                 )}
 
@@ -1161,7 +1327,7 @@ export default function SyncApp() {
                 )}
 
                 {/* Manual propose form */}
-                <section className="mt-6 rounded-2xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
+                <section ref={proposeFormRef} className="mt-6 rounded-2xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)", scrollMarginTop: 90 }}>
                   <div className="flex items-center justify-between mb-2">
                     <p className="display text-base" style={{ color: "var(--paper)" }}>Propose a date manually</p>
                     {!showProposeForm && (
@@ -1177,7 +1343,10 @@ export default function SyncApp() {
                           {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
                         </select>
                         <input value={proposeCity} onChange={(e) => setProposeCity(e.target.value)} placeholder="City (optional)" className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 140 }} />
-                        <input value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} placeholder="Time (optional)" className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 120 }} />
+                        <select value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 130 }}>
+                          <option value="">Time (optional)</option>
+                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                        </select>
                       </div>
                       <input value={proposeTitle} onChange={(e) => setProposeTitle(e.target.value)} placeholder="Name this invitation" className="text-sm rounded-lg px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                       <textarea value={proposeMessage} onChange={(e) => setProposeMessage(e.target.value)} placeholder="Message (optional)" rows={3} className="text-sm rounded-lg px-4 py-2 outline-none w-full mb-3 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
@@ -1187,10 +1356,11 @@ export default function SyncApp() {
                       </div>
                     </div>
                   )}
-                  <p className="text-sm" style={{ color: "var(--mist)" }}>Your full list of plans lives above, and on the Plans tab.</p>
+                  <p className="text-sm" style={{ color: "var(--mist)" }}>Your full list of plans lives on the Plans tab.</p>
                 </section>
               </main>
-            )}
+              );
+            })()}
 
             {tab === "plans" && (
               <main className="px-5 pb-28">
@@ -1424,6 +1594,7 @@ export default function SyncApp() {
                                   <div key={m.id} className="rounded-xl px-4 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
                                     <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
                                     <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
+                                    <MessageReactions message={m} onToggle={(emoji) => toggleThreadReaction(p.id, m.id, emoji)} />
                                   </div>
                                 );
                               })}
@@ -1452,63 +1623,6 @@ export default function SyncApp() {
                     })}
                   </div>
                 )}
-              </main>
-            )}
-
-            {tab === "events" && (
-              <main className="px-5 pb-28">
-                <section className="mb-6">
-                  <p className="text-sm mb-3" style={{ color: "var(--mist)" }}>Planning for:</p>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <button onClick={() => setEventsContextId(null)} className="sync-chip text-sm rounded-full px-4 py-1.5" style={{ background: !eventsContextId ? "var(--marigold)" : "transparent", color: !eventsContextId ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${!eventsContextId ? "var(--marigold)" : "var(--ink-3)"}` }}>Austin, TX (default)</button>
-                    {confirmedProposals.map((p) => {
-                      const target = proposalTarget(p);
-                      if (!target) return null;
-                      const active = eventsContextId === p.id;
-                      return (
-                        <button key={p.id} onClick={() => setEventsContextId(p.id)} className="sync-chip text-sm rounded-full px-4 py-1.5 flex items-center gap-2" style={{ background: active ? target.color : "transparent", color: active ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${active ? target.color : "var(--ink-3)"}` }}>
-                          {target.isPerson ? <Avatar person={target.person} size={16} /> : <span>{target.icon}</span>}
-                          {target.name} · {rangeLabel(p.dateKey, p.endDateKey || p.dateKey)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-sm mb-3" style={{ color: "var(--mist)" }}>
-                    {activeEventsContext && activeEventsTarget ? (
-                      <>Showing events near <span style={{ color: "var(--paper)" }}>{activeEventsContext.city || activeEventsTarget.name + "'s destination"}</span> for the confirmed <span style={{ color: "var(--paper)" }}>{rangeLabel(activeEventsContext.dateKey, activeEventsContext.endDateKey || activeEventsContext.dateKey)}</span> plan. Vote with "I'm in" so whoever's planning knows what's popular.</>
-                    ) : (
-                      <>Showing events near <span style={{ color: "var(--paper)" }}>Austin, TX</span>. Lock in a proposal on the Calendar tab and it'll show up here as its own tab, with its own city.</>
-                    )}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {INTERESTS.map((interest) => {
-                      const active = selectedInterests.includes(interest);
-                      return (<button key={interest} onClick={() => toggleInterest(interest)} className="sync-chip text-sm rounded-full px-4 py-1.5" style={{ background: active ? "var(--marigold)" : "transparent", color: active ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${active ? "var(--marigold)" : "var(--ink-3)"}` }}>{interest}</button>);
-                    })}
-                    {selectedInterests.length > 0 && <button onClick={() => setSelectedInterests([])} className="text-sm px-3 py-1.5" style={{ color: "var(--ember)" }}>Clear</button>}
-                  </div>
-                </section>
-
-                <section className="grid grid-cols-1 gap-4">
-                  {filteredEvents.map((e, i) => {
-                    const votes = activeEventsContext ? (eventVotes[activeEventsContext.id]?.[i] || []) : [];
-                    const voted = votes.includes(editingAsId);
-                    return (
-                      <div key={i} className="sync-card rounded-2xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-                        <p className="mono text-xs mb-2" style={{ color: "var(--marigold)" }}>{e.date} · {e.time}</p>
-                        <h3 className="display text-base mb-1" style={{ color: "var(--paper)" }}>{e.name}</h3>
-                        <p className="text-sm mb-3" style={{ color: "var(--mist)" }}>{e.location}</p>
-                        <div className="flex flex-wrap gap-1.5 mb-3">{e.tags.map((t) => (<span key={t} className="text-xs rounded-full px-2.5 py-1" style={{ background: "var(--ink-3)", color: "var(--marigold)" }}>{t}</span>))}</div>
-                        {activeEventsContext && (
-                          <button onClick={() => toggleEventVote(activeEventsContext.id, i)} className="text-xs rounded-full px-3 py-1.5" style={{ background: voted ? "var(--mint)" : "var(--ink-3)", color: voted ? "var(--on-accent)" : "var(--mist)" }}>
-                            {voted ? "✓ You're in" : "I'm in"} {votes.length > 0 ? `· ${votes.length}` : ""}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {filteredEvents.length === 0 && <p style={{ color: "var(--mist)" }}>No events match those interests yet.</p>}
-                </section>
               </main>
             )}
 
@@ -1803,7 +1917,18 @@ export default function SyncApp() {
                         <div className="mb-4">
                           <AvatarPicker person={p} onChange={(patch) => updatePerson(p.id, patch)} />
                         </div>
-                        <BackgroundPicker value={p.background} onChange={(bg) => updatePerson(p.id, { background: bg })} label="profile background" />
+                        <div className="mb-4">
+                          <BackgroundPicker value={p.background} onChange={(bg) => updatePerson(p.id, { background: bg })} label="profile background" />
+                        </div>
+                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>birthday</p>
+                        <input
+                          type="date"
+                          value={p.birthday ? `2000-${p.birthday}` : ""}
+                          onChange={(e) => updatePerson(p.id, { birthday: e.target.value ? e.target.value.slice(5) : null })}
+                          className="text-sm rounded-lg px-3 py-2 outline-none"
+                          style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", colorScheme: "dark" }}
+                        />
+                        <p className="text-xs mono mt-1" style={{ color: "var(--mist)", opacity: 0.7 }}>year doesn't matter — shows a 🎂 on My Calendar every year</p>
                       </div>
                     )}
 
@@ -1843,6 +1968,7 @@ export default function SyncApp() {
                                 <div key={m.id} className="rounded-xl px-3 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
                                   <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
                                   <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
+                                  <MessageReactions message={m} onToggle={(emoji) => toggleDmReaction(dmKey(editingAsId, p.id), m.id, emoji)} />
                                 </div>
                               );
                             })}
@@ -1948,6 +2074,7 @@ export default function SyncApp() {
                             <div key={m.id} className="rounded-xl px-3 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
                               <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
                               <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
+                              <MessageReactions message={m} onToggle={(emoji) => toggleGroupReaction(g.id, m.id, emoji)} />
                             </div>
                           );
                         })}

@@ -13,19 +13,3 @@ export function SyncMark({ size = 40, dark = false }) {
     </svg>
   );
 }
-
-export function SyncLogo({ tagline = "close the distance, one day at a time", dark = false }) {
-  const fg = dark ? "#1D1D1F" : "#FFFFFF";
-  return (
-    <div className="flex flex-col items-center">
-      <div
-        className="flex items-center justify-center mb-5"
-        style={{ width: 92, height: 92, borderRadius: 26, background: dark ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.16)", boxShadow: dark ? "none" : "0 18px 40px rgba(0,0,0,0.18)" }}
-      >
-        <SyncMark size={48} dark={dark} />
-      </div>
-      <p style={{ color: fg, fontWeight: 800, fontSize: 26, letterSpacing: 6, lineHeight: 1 }}>SYNC</p>
-      <p style={{ color: fg, opacity: 0.75, fontWeight: 600, fontSize: 11, letterSpacing: 1.5, marginTop: 8, textTransform: "uppercase" }}>{tagline}</p>
-    </div>
-  );
-}
