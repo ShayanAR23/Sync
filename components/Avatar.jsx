@@ -34,7 +34,9 @@ function downscaleImage(file, maxSize = 160) {
   });
 }
 
-// Shared circle renderer: photo > emoji sticker > initial letter.
+// Shared squircle renderer: photo > emoji sticker > initial letter. A fixed
+// (not proportional) corner radius keeps real corners visible at every size
+// instead of rounding all the way into a circle.
 export function Avatar({ person, size = 32, ring }) {
   if (!person) return null;
   const style = {
@@ -46,10 +48,11 @@ export function Avatar({ person, size = 32, ring }) {
     fontSize: person.avatarEmoji ? size * 0.62 : size * 0.42,
     fontWeight: 600,
     overflow: "hidden",
+    borderRadius: Math.max(4, size * 0.2),
     boxShadow: ring ? `0 0 0 2px ${ring}` : "none",
   };
   return (
-    <span className="inline-flex items-center justify-center rounded-full flex-shrink-0" style={style}>
+    <span className="inline-flex items-center justify-center flex-shrink-0" style={style}>
       {person.avatarPhoto ? (
         <img src={person.avatarPhoto} alt={person.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       ) : person.avatarEmoji ? (
@@ -82,7 +85,7 @@ export function AvatarPicker({ person, onChange }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => fileRef.current?.click()}
-            className="text-xs rounded-full px-3 py-1.5"
+            className="text-xs rounded-lg px-3 py-1.5"
             style={{ background: "var(--ink-3)", color: "var(--paper)" }}
           >
             Upload photo
@@ -104,7 +107,7 @@ export function AvatarPicker({ person, onChange }) {
           <button
             key={e}
             onClick={() => onChange({ avatarEmoji: e, avatarPhoto: null })}
-            className="flex items-center justify-center rounded-full"
+            className="flex items-center justify-center rounded-lg"
             style={{
               width: 30,
               height: 30,

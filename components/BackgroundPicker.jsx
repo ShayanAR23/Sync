@@ -60,7 +60,7 @@ export function BackgroundPicker({ value, onChange, label = "Background" }) {
         style={{ height: 64, background: value || "var(--ink-3)", backgroundSize: "cover", backgroundPosition: "center", border: "1px solid var(--ink-3)" }}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => fileRef.current?.click()} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>
+        <button onClick={() => fileRef.current?.click()} className="text-xs rounded-lg px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>
           Upload image
         </button>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
@@ -68,7 +68,7 @@ export function BackgroundPicker({ value, onChange, label = "Background" }) {
           <button
             key={i}
             onClick={() => onChange(g)}
-            className="rounded-full"
+            className="rounded-md"
             style={{ width: 24, height: 24, background: g, boxShadow: value === g ? "0 0 0 2px var(--ink), 0 0 0 4px var(--marigold)" : "none" }}
           />
         ))}

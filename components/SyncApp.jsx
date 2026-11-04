@@ -11,8 +11,11 @@ import { Avatar, AvatarPicker } from "./Avatar";
 import { BackgroundPicker } from "./BackgroundPicker";
 import { PhoneShell, BottomTabBar } from "./PhoneShell";
 import { downloadICS, parseICS } from "./ics";
+import { Saamy } from "./Mascot";
+import { AppTour } from "./AppTour";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const WEEKDAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 8); // 8am - 11pm
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -21,18 +24,18 @@ const MONTH_NAMES_FULL = ["January","February","March","April","May","June","Jul
 // Default per-month look for the hero calendar — a themed gradient + big
 // motif icon, overridable per year-month with a custom uploaded image.
 const MONTH_THEMES = [
-  { grad: "linear-gradient(160deg,#1e3a5f 0%,#0f2540 100%)", icon: "❄️" },
-  { grad: "linear-gradient(160deg,#5b2a6e 0%,#2e1440 100%)", icon: "💘" },
-  { grad: "linear-gradient(160deg,#2f5f4a 0%,#163326 100%)", icon: "🌱" },
-  { grad: "linear-gradient(160deg,#3f7a3a 0%,#1e3d19 100%)", icon: "🌷" },
-  { grad: "linear-gradient(160deg,#6a8f3a 0%,#33450f 100%)", icon: "🌸" },
-  { grad: "linear-gradient(160deg,#c98a1f 0%,#7a4f0a 100%)", icon: "☀️" },
-  { grad: "linear-gradient(160deg,#d9541f 0%,#7a2a0a 100%)", icon: "🎆" },
-  { grad: "linear-gradient(160deg,#c9781f 0%,#6e3d0a 100%)", icon: "🏖️" },
-  { grad: "linear-gradient(160deg,#a05a2a 0%,#4f2a10 100%)", icon: "🍂" },
-  { grad: "linear-gradient(160deg,#9a4a1f 0%,#4a1f0a 100%)", icon: "🎃" },
-  { grad: "linear-gradient(160deg,#6a4a2a 0%,#2a1a10 100%)", icon: "🦃" },
-  { grad: "linear-gradient(160deg,#1c3a5f 0%,#0a1a30 100%)", icon: "🎄" },
+  { grad: "linear-gradient(160deg,#5FA8A6 0%,#2E6B69 100%)", icon: "❄️" },
+  { grad: "linear-gradient(160deg,#C98AB0 0%,#7A4868 100%)", icon: "💘" },
+  { grad: "linear-gradient(160deg,#A3C96B 0%,#5C7A33 100%)", icon: "🌱" },
+  { grad: "linear-gradient(160deg,#E2957A 0%,#9C4F3A 100%)", icon: "🌷" },
+  { grad: "linear-gradient(160deg,#D49FC9 0%,#8A5580 100%)", icon: "🌸" },
+  { grad: "linear-gradient(160deg,#E0A458 0%,#A06A24 100%)", icon: "☀️" },
+  { grad: "linear-gradient(160deg,#D9714B 0%,#8A3E22 100%)", icon: "🎆" },
+  { grad: "linear-gradient(160deg,#D9A75C 0%,#7A5A2A 100%)", icon: "🏖️" },
+  { grad: "linear-gradient(160deg,#B4894A 0%,#6E4A1F 100%)", icon: "🍂" },
+  { grad: "linear-gradient(160deg,#C9712F 0%,#6E3815 100%)", icon: "🎃" },
+  { grad: "linear-gradient(160deg,#8A6A3A 0%,#4A3618 100%)", icon: "🦃" },
+  { grad: "linear-gradient(160deg,#3E5F4A 0%,#1E3326 100%)", icon: "🎄" },
 ];
 
 // Fixed-date holidays (month is 1-indexed to match everyday date labels).
@@ -84,6 +87,13 @@ function hourLabel(h) {
   if (h === 12) return "12p";
   if (h > 12) return `${h - 12}p`;
   return `${h}a`;
+}
+// "2:00 PM"-style label for a Best Times window boundary — h may be 24
+// (midnight, the end of the 11pm slot), wrapped back into 0-23.
+function hourClockLabel(h) {
+  const hh = h % 24;
+  const hour12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${hour12}:00 ${hh < 12 ? "AM" : "PM"}`;
 }
 function tzLabelFor(offset) {
   const found = TZ_OPTIONS.find((t) => t.offset === offset);
@@ -202,14 +212,37 @@ function tentativePattern(hex) {
   return `repeating-linear-gradient(45deg, ${hexToRgba(hex, 0.45)} 0px, ${hexToRgba(hex, 0.45)} 3px, transparent 3px, transparent 6px)`;
 }
 
-// Maps any free/total fraction to a "filling up" moon phase — deliberately
-// only the waxing half of the lunar cycle (new -> full), since the waning
-// half would visually look like it's emptying back out. Fraction-based
-// (not headcount-based) so it scales to groups of any size, not just <=8.
-const MOON_PHASES = ["🌑", "🌒", "🌓", "🌔", "🌕"];
-function moonPhaseEmoji(fraction) {
-  const f = Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 0;
-  return MOON_PHASES[Math.round(f * (MOON_PHASES.length - 1))];
+// SAAMY's face as a tiny availability indicator — his expression tracks the
+// free/total fraction (fraction-based, not headcount-based, so it scales to
+// groups of any size) instead of the old moon-phase emoji.
+function SaamyFace({ frac, size = 16, title }) {
+  const f = Number.isFinite(frac) ? Math.max(0, Math.min(1, frac)) : 0;
+  const mood = f >= 0.75 ? "happy" : f >= 0.34 ? "content" : "sleepy";
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" title={title} style={{ flexShrink: 0 }}>
+      <ellipse cx="4" cy="4.5" rx="3.1" ry="4.4" fill="#101010" transform="rotate(-18 4 4.5)" />
+      <ellipse cx="16" cy="4.5" rx="2.8" ry="4" fill="#101010" transform="rotate(18 16 4.5)" />
+      <circle cx="10" cy="11" r="7.4" fill="#F2F2F2" stroke="#101010" strokeWidth="0.6" />
+      {mood === "sleepy" ? (
+        <>
+          <path d="M6.3 10.5 q1.5 1.3 3 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
+          <path d="M11.7 10.5 q1.5 1.3 3 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <circle cx="7.6" cy="10.4" r="1.15" fill="#101010" />
+          <circle cx="12.4" cy="10.4" r="1.15" fill="#101010" />
+        </>
+      )}
+      {mood === "happy" ? (
+        <path d="M6.8 13.2 q3.2 3 6.4 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
+      ) : mood === "content" ? (
+        <path d="M7.4 13.6 q2.6 1.6 5.2 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
+      ) : (
+        <ellipse cx="10" cy="13.6" rx="1.1" ry="0.8" fill="#101010" />
+      )}
+    </svg>
+  );
 }
 
 const ALL_YEAR_KEYS = (() => {
@@ -238,13 +271,25 @@ export default function SyncApp() {
   const [seenSnapshot, setSeenSnapshot] = useState({}); // { [proposalId]: { threadLen, rsvpJson } }
   const prevTabRef = useRef(tab);
   const [horizon, setHorizon] = useState("year"); // "week" | "year"
+  const [friendsViewMode, setFriendsViewMode] = useState("calendar"); // "calendar" | "best" — Friends Calendars grid vs. ranked overlap list
   // Whose availability the Friends Calendars tab is showing: a group id, a person id, or "you".
   const [friendsView, setFriendsView] = useState(null);
 
   // ---- app-like intro slideshow, shown on every load ----
   const [showOnboarding, setShowOnboarding] = useState(true);
+  const [showTour, setShowTour] = useState(false);
   const dismissOnboarding = () => {
     setShowOnboarding(false);
+    setShowTour(true);
+  };
+
+  // ---- tap the header mascot and he reacts ----
+  const [tickled, setTickled] = useState(false);
+  const tickleTimeoutRef = useRef(null);
+  const tickleMascot = () => {
+    clearTimeout(tickleTimeoutRef.current);
+    setTickled(true);
+    tickleTimeoutRef.current = setTimeout(() => setTickled(false), 650);
   };
 
   // ---- hero calendar (mini month + day detail) state ----
@@ -328,7 +373,17 @@ export default function SyncApp() {
   const [proposeTime, setProposeTime] = useState("");
   const [proposeTitle, setProposeTitle] = useState("");
   const [proposeMessage, setProposeMessage] = useState("");
-  const [showProposeForm, setShowProposeForm] = useState(false);
+  const [planSectionTab, setPlanSectionTab] = useState("plan"); // "plan" | "event" — which form the Friends Calendars plan section shows
+  const [eventDate, setEventDate] = useState("");
+  const [eventCity, setEventCity] = useState("");
+  const [eventTime, setEventTime] = useState("");
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventMessage, setEventMessage] = useState("");
+  const [planSectionFocusAt, setPlanSectionFocusAt] = useState(0);
+  const [showPlanMoreDetails, setShowPlanMoreDetails] = useState(false);
+  const [showEventMoreDetails, setShowEventMoreDetails] = useState(false);
+  const [proposeError, setProposeError] = useState("");
+  const [eventError, setEventError] = useState("");
 
   const [inspectedKey, setInspectedKey] = useState(null); // currently hovered/clicked day, Groups tab
   const [inspectedRangeEnd, setInspectedRangeEnd] = useState(null); // set when a multi-day bubble was clicked
@@ -382,15 +437,15 @@ export default function SyncApp() {
   const paintRef = useRef({ painting: false, value: "free" });
   const months = useMemo(() => next12Months(), []);
 
-  // Scroll the "Propose a date manually" section into view whenever it opens
-  // on the Friends Calendars tab — otherwise it can open far below the fold
-  // (behind the moon calendars) and look like the button did nothing.
+  // Scroll the plan/event section into view whenever "+ New plan" or "+ Add
+  // event" is tapped elsewhere in the app — otherwise it can open far below
+  // the fold (behind the moon calendars) and look like the tap did nothing.
   const proposeFormRef = useRef(null);
   useEffect(() => {
-    if (tab === "friends" && showProposeForm) {
+    if (tab === "friends" && planSectionFocusAt) {
       proposeFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [tab, showProposeForm]);
+  }, [tab, planSectionFocusAt]);
 
   useEffect(() => {
     const stop = () => (paintRef.current.painting = false);
@@ -444,20 +499,38 @@ export default function SyncApp() {
   const createProposal = (kind, targetId, dateKey, title, message, location, endDateKey, time, seriesId, seriesLabel) => {
     if (!targetId || !dateKey) return;
     const id = `${kind}-${targetId}-${dateKey}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const defaultName = kind === "group" ? groups.find((x) => x.id === targetId)?.name : peopleById[targetId]?.name;
+    const defaultName = kind === "group" ? groups.find((x) => x.id === targetId)?.name : kind === "event" ? "Event" : peopleById[targetId]?.name;
     const finalTitle = (title || "").trim() || `${defaultName || "Plan"} · ${rangeLabel(dateKey, endDateKey || dateKey)}`;
     setProposals((ps) => [...ps, {
       id, kind,
       groupId: kind === "group" ? targetId : null,
-      personId: kind === "person" ? targetId : null,
+      personId: kind === "group" ? null : targetId,
       dateKey, endDateKey: endDateKey || dateKey,
       city: (location || "").trim(),
       time: (time || "").trim(),
       title: finalTitle, message: (message || "").trim(),
-      fromId: editingAsId, rsvps: {}, thread: [], extraInviteeIds: [],
+      fromId: editingAsId, rsvps: kind === "event" ? { you: "yes" } : {}, thread: [], extraInviteeIds: [],
       seriesId: seriesId || null, seriesLabel: seriesLabel || null,
     }]);
     return id;
+  };
+  const createEvent = () => {
+    if (!eventDate) return;
+    createProposal("event", "you", eventDate, eventTitle, eventMessage, eventCity, null, eventTime);
+    setEventDate(""); setEventCity(""); setEventTime(""); setEventTitle(""); setEventMessage(""); setEventError("");
+  };
+  // Validate-then-create wrappers for the manual forms — keep whatever the
+  // user typed when a required field is missing, instead of silently
+  // no-opping (createProposal/createEvent above) and wiping the form.
+  const submitPlanForm = () => {
+    if (!proposeDate) { setProposeError("Pick a date first."); return; }
+    if (!proposeGroupId) { setProposeError("Choose a group to propose this to."); return; }
+    createProposal("group", proposeGroupId, proposeDate, proposeTitle, proposeMessage, proposeCity, null, proposeTime);
+    setProposeDate(""); setProposeGroupId(""); setProposeCity(""); setProposeTitle(""); setProposeMessage(""); setProposeTime(""); setProposeError("");
+  };
+  const submitEventForm = () => {
+    if (!eventDate) { setEventError("Pick a date first."); return; }
+    createEvent();
   };
   const updateProposal = (id, patch) => setProposals((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const addInviteeToProposal = (proposalId, personId) => {
@@ -477,13 +550,13 @@ export default function SyncApp() {
   const [inviteTime, setInviteTime] = useState("");
   const [inviteRepeat, setInviteRepeat] = useState("none"); // "none" | "weekly" | "monthly"
 
-  const openInviteModal = (kind, targetId, dateKey, endDateKey) => {
+  const openInviteModal = (kind, targetId, dateKey, endDateKey, prefillTime) => {
     if (proposalExists(kind, targetId, dateKey)) { setInviteNote("Already invited — see the Plans tab."); return; }
     const name = kind === "group" ? groups.find((x) => x.id === targetId)?.name : peopleById[targetId]?.name;
     setInviteTitle(`${name || "Plan"} · ${rangeLabel(dateKey, endDateKey || dateKey)}`);
     setInviteMessage("");
     setInviteLocation("");
-    setInviteTime("");
+    setInviteTime(prefillTime || "");
     setInviteRepeat("none");
     setInviteModal({ kind, targetId, dateKey, endDateKey: endDateKey || dateKey });
   };
@@ -538,24 +611,37 @@ export default function SyncApp() {
   const saveEditProposal = () => { if (editingProposalId) updateProposal(editingProposalId, { title: editDraft.title, message: editDraft.message, city: editDraft.city, time: editDraft.time }); setEditingProposalId(null); };
 
   const [inviteMoreForId, setInviteMoreForId] = useState(null);
+  const [expandedResponsesId, setExpandedResponsesId] = useState(null);
+  const [moreActionsForId, setMoreActionsForId] = useState(null);
 
   const setRsvp = (proposalId, personId, status) => {
     setProposals((ps) => ps.map((p) => (p.id === proposalId ? { ...p, rsvps: { ...p.rsvps, [personId]: status } } : p)));
   };
   const addReply = (proposalId, personId, text) => {
     if (!text.trim()) return;
-    setProposals((ps) => ps.map((p) => (p.id === proposalId ? { ...p, thread: [...p.thread, { id: `${proposalId}-${Date.now()}`, personId, text: text.trim() }] } : p)));
+    setProposals((ps) => ps.map((p) => (p.id === proposalId ? { ...p, thread: [...p.thread, { id: `${proposalId}-${Date.now()}`, personId, text: text.trim(), ts: Date.now() }] } : p)));
   };
 
   const dmKey = (a, b) => [a, b].sort().join("__");
   const sendDM = (targetId, text) => {
     if (!text.trim()) return;
     const key = dmKey(editingAsId, targetId);
-    setDmThreads((prev) => ({ ...prev, [key]: [...(prev[key] || []), { id: `${key}-${Date.now()}`, fromId: editingAsId, text: text.trim() }] }));
+    setDmThreads((prev) => ({ ...prev, [key]: [...(prev[key] || []), { id: `${key}-${Date.now()}`, fromId: editingAsId, text: text.trim(), ts: Date.now() }] }));
   };
   const sendGroupMessage = (groupId, text) => {
     if (!text.trim()) return;
-    setGroupThreads((prev) => ({ ...prev, [groupId]: [...(prev[groupId] || []), { id: `${groupId}-${Date.now()}`, personId: editingAsId, text: text.trim() }] }));
+    setGroupThreads((prev) => ({ ...prev, [groupId]: [...(prev[groupId] || []), { id: `${groupId}-${Date.now()}`, personId: editingAsId, text: text.trim(), ts: Date.now() }] }));
+  };
+  // Relative label for a real message timestamp — omitted entirely (never
+  // fabricated) for older seeded messages that predate the `ts` field.
+  const timeAgo = (ts) => {
+    if (!ts) return null;
+    const mins = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    if (mins < 1) return "now";
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.round(hours / 24)}d`;
   };
 
   // ---- message reactions (shared across proposal threads, DMs, and group chat) ----
@@ -585,14 +671,14 @@ export default function SyncApp() {
         {entries.map(([emoji, ids]) => {
           const mine = ids.includes(editingAsId);
           return (
-            <button key={emoji} onClick={() => onToggle(emoji)} className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1" style={{ background: mine ? "rgba(255,122,26,0.18)" : "var(--ink-3)", border: `1px solid ${mine ? "var(--marigold)" : "transparent"}` }}>
+            <button key={emoji} onClick={() => onToggle(emoji)} className="text-xs rounded-xl px-2 py-0.5 flex items-center gap-1" style={{ background: mine ? "rgba(255,122,26,0.18)" : "var(--ink-3)", border: `1px solid ${mine ? "var(--marigold)" : "transparent"}` }}>
               <span>{emoji}</span><span className="mono" style={{ fontSize: 10, color: "var(--paper)" }}>{ids.length}</span>
             </button>
           );
         })}
-        <button onClick={() => setReactionPickerFor(pickerOpen ? null : message.id)} className="text-xs rounded-full px-1.5 py-0.5" style={{ background: "var(--ink-3)", color: "var(--mist)" }}>+</button>
+        <button onClick={() => setReactionPickerFor(pickerOpen ? null : message.id)} aria-label="Add reaction" className="text-xs rounded-xl px-1.5 py-0.5" style={{ background: "var(--ink-3)", color: "var(--mist)" }}>+</button>
         {pickerOpen && (
-          <div className="flex items-center gap-1 rounded-full px-2 py-1 absolute z-10" style={{ top: "100%", left: 0, marginTop: 4, background: "var(--ink-4)", boxShadow: "0 8px 20px rgba(0,0,0,0.35)" }}>
+          <div className="flex items-center gap-1 rounded-xl px-2 py-1 absolute z-10 sync-pop-in" style={{ top: "100%", left: 0, marginTop: 4, background: "var(--ink-4)", boxShadow: "0 8px 20px rgba(0,0,0,0.35)" }}>
             {REACTION_EMOJIS.map((e) => (
               <button key={e} onClick={() => { onToggle(e); setReactionPickerFor(null); }} className="text-sm">{e}</button>
             ))}
@@ -612,12 +698,14 @@ export default function SyncApp() {
   }, []);
   const proposalParticipants = (p) => {
     let base;
-    if (p.kind === "person") base = p.personId ? ["you", p.personId] : [];
+    if (p.kind === "event") base = ["you"];
+    else if (p.kind === "person") base = p.personId ? ["you", p.personId] : [];
     else { const g = groups.find((x) => x.id === p.groupId); base = g ? ["you", ...g.memberIds] : []; }
     const extra = (p.extraInviteeIds || []).filter((id) => !base.includes(id));
     return [...base, ...extra];
   };
   const proposalTarget = (p) => {
+    if (p.kind === "event") return { name: "Event", color: you.color, isPerson: true, person: you, isEvent: true };
     if (p.kind === "person") {
       const person = peopleById[p.personId];
       return person ? { name: person.name, color: person.color, isPerson: true, person } : null;
@@ -654,16 +742,6 @@ export default function SyncApp() {
       ],
     }]);
   }, []);
-
-  const upcomingByGroup = useMemo(() => {
-    const result = {};
-    for (const g of groups) {
-      const hits = [];
-      for (const key of ALL_YEAR_KEYS) if (groupFullyFree(g, key)) hits.push(key);
-      result[g.id] = hits.slice(0, 6);
-    }
-    return result;
-  }, [groups, availability]);
 
   // any proposal whose date range covers this day — powers the mini calendar dots + day detail panel
   const eventsOnDay = (iso) => proposals.filter((p) => iso >= p.dateKey && iso <= (p.endDateKey || p.dateKey));
@@ -702,7 +780,7 @@ export default function SyncApp() {
               const ring = today ? `inset 0 0 0 1px ${editingAsPerson.color}` : "none";
               return (
                 <div key={key} onMouseDown={() => handleMouseDown(key)} onMouseEnter={() => handleMouseEnter(key)} onClick={() => { setInspectedKey(key); setInspectedRangeEnd(null); }}
-                  className="sync-daycell flex items-center justify-center mx-auto rounded-full"
+                  className="sync-daycell flex items-center justify-center mx-auto rounded-xl"
                   style={{ width: cellSize, height: cellSize, background: bg, color: textColor, cursor: "pointer", boxShadow: ring }}
                   title={`${niceDateLabel(key)} · ${status || "not marked"} · click to invite`}>
                   <span className="mono" style={{ fontSize: 11 }}>{d.getDate()}</span>
@@ -721,7 +799,7 @@ export default function SyncApp() {
               return (
                 <div key={key}
                   onClick={() => onPick && onPick(key, key)}
-                  className="sync-daycell flex items-center justify-center mx-auto rounded-full"
+                  className="sync-daycell flex items-center justify-center mx-auto rounded-xl"
                   style={{ width: cellSize, height: cellSize, background: bg, color: textColor, boxShadow: ring, cursor: onPick ? "pointer" : "default" }}
                   title={`${niceDateLabel(key)} · ${status || "not marked"}`}>
                   <span className="mono" style={{ fontSize: 11 }}>{d.getDate()}</span>
@@ -748,7 +826,7 @@ export default function SyncApp() {
                   className="sync-daycell mx-auto flex flex-col items-center justify-center rounded-2xl"
                   style={{ width: cellDim, height: cellDim, cursor: onPick ? "pointer" : "default", background: isFull ? hexToRgba(g?.color || "#888", 0.3) : "transparent" }}
                   title={title}>
-                  <span style={{ fontSize: compact ? 12 : 14, lineHeight: 1 }}>{moonPhaseEmoji(frac)}</span>
+                  <SaamyFace frac={frac} size={compact ? 13 : 15} />
                   <span className="mono" style={{ fontSize: 9, marginTop: 1, color: today ? "var(--paper)" : "var(--mist)" }}>{d.getDate()}</span>
                 </div>
               );
@@ -785,16 +863,16 @@ export default function SyncApp() {
 
         <div className="relative p-4">
           <div className="flex items-center justify-between mb-4">
-            <button onClick={prevMonth} aria-label="Previous month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--paper)" }}>‹</button>
+            <button onClick={prevMonth} aria-label="Previous month" className="sync-icon-btn flex items-center justify-center rounded-xl" style={{ width: 28, height: 28, color: "#FFFFFF" }}>‹</button>
             <button onClick={() => setShowMonthBgPicker((s) => !s)} className="flex items-center gap-2">
-              <p className="display text-lg" style={{ color: "var(--paper)" }}>{MONTH_NAMES_FULL[calMonth]} <span className="mono text-xs" style={{ color: "rgba(245,245,247,0.75)" }}>{calYear}</span></p>
-              <Camera size={13} style={{ color: "rgba(245,245,247,0.75)" }} />
+              <p className="display text-lg" style={{ color: "#FFFFFF", fontWeight: 800, textShadow: "0 1px 6px rgba(0,0,0,0.35)" }}>{MONTH_NAMES_FULL[calMonth]} <span className="mono text-xs" style={{ color: "rgba(255,255,255,0.8)" }}>{calYear}</span></p>
+              <Camera size={13} style={{ color: "rgba(255,255,255,0.8)" }} />
             </button>
-            <button onClick={nextMonth} aria-label="Next month" className="sync-icon-btn flex items-center justify-center rounded-full" style={{ width: 28, height: 28, color: "var(--paper)" }}>›</button>
+            <button onClick={nextMonth} aria-label="Next month" className="sync-icon-btn flex items-center justify-center rounded-xl" style={{ width: 28, height: 28, color: "#FFFFFF" }}>›</button>
           </div>
 
           {showMonthBgPicker && (
-            <div className="rounded-xl p-3 mb-4" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(245,245,247,0.15)" }}>
+            <div className="rounded-xl p-3 mb-4 sync-pop-in" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(245,245,247,0.15)" }}>
               <BackgroundPicker
                 value={customBg || null}
                 onChange={(bg) => setMonthBackgrounds((prev) => { const next = { ...prev }; if (bg) next[monthKey] = bg; else delete next[monthKey]; return next; })}
@@ -829,12 +907,14 @@ export default function SyncApp() {
                     background: selected ? "var(--marigold)" : "transparent",
                     boxShadow: !selected && today ? "inset 0 0 0 1px var(--marigold)" : "none",
                   }}>
+                  <span key={selected ? `${iso}-sel` : `${iso}-off`} className={selected ? "sync-day-pop" : undefined} style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                   {holiday && <span className="absolute" style={{ top: -3, left: -3, fontSize: 11 }} title={holiday.name}>{holiday.icon}</span>}
                   {birthdayPeople.length > 0 && <span className="absolute" style={{ top: -3, right: -3, fontSize: 11 }} title={`${birthdayPeople.map((p) => p.name).join(", ")}'s birthday`}>🎂</span>}
-                  <span className="mono" style={{ fontSize: 12, color: selected ? "var(--on-accent)" : "var(--paper)" }}>{d.getDate()}</span>
+                  <span className="display" style={{ fontSize: 13, fontWeight: 800, color: selected ? "var(--on-accent)" : "#FFFFFF", textShadow: selected ? "none" : "0 1px 4px rgba(0,0,0,0.45)" }}>{d.getDate()}</span>
                   <span style={{ display: "flex", gap: 2, height: 5, marginTop: 2, alignItems: "center" }}>
                     {dotColors.map((c, idx) => (<span key={idx} style={{ width: 4, height: 4, borderRadius: "50%", background: selected ? "var(--on-accent)" : c }} />))}
-                    {totalCount > 3 && <span className="mono" style={{ fontSize: 7, color: selected ? "var(--on-accent)" : "rgba(245,245,247,0.7)" }}>+</span>}
+                    {totalCount > 3 && <span className="mono" style={{ fontSize: 7, color: selected ? "var(--on-accent)" : "rgba(255,255,255,0.85)" }}>+</span>}
+                  </span>
                   </span>
                 </button>
               );
@@ -851,14 +931,19 @@ export default function SyncApp() {
     const importedHits = importedEventsOnDay(selectedDayIso);
     return (
       <div className="rounded-3xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-        <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>{fullDateLabel(selectedDayIso)}{selectedDayIso === todayIso ? <span className="mono text-xs ml-2" style={{ color: "var(--marigold)" }}>today</span> : ""}</p>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="display text-lg" style={{ color: "var(--paper)" }}>{fullDateLabel(selectedDayIso)}{selectedDayIso === todayIso ? <span className="mono text-xs ml-2" style={{ color: "var(--marigold)" }}>today</span> : ""}</p>
+        </div>
         {dayEvents.length === 0 && importedHits.length === 0 ? (
           <div>
-            <p className="text-sm mb-3" style={{ color: "var(--mist)" }}>Nothing planned yet.</p>
+            <div className="flex items-center gap-2 mb-3">
+              <Saamy size={30} />
+              <p className="text-sm" style={{ color: "var(--mist)" }}>Nothing planned yet.</p>
+            </div>
             {groups.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {groups.slice(0, 3).map((g) => (
-                  <button key={g.id} onClick={() => openInviteModal("group", g.id, selectedDayIso)} className="text-xs rounded-full px-3 py-1.5" style={{ border: "1px solid var(--ink-3)", color: "var(--paper)" }}>+ Invite {g.name}</button>
+                  <button key={g.id} onClick={() => openInviteModal("group", g.id, selectedDayIso)} className="text-xs rounded-xl px-3 py-1.5" style={{ border: "1px solid var(--ink-3)", color: "var(--paper)" }}>+ Invite {g.name}</button>
                 ))}
               </div>
             )}
@@ -911,15 +996,15 @@ export default function SyncApp() {
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
     return (
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="display text-lg" style={{ color: "var(--paper)" }}>Up next</p>
-          <button onClick={() => { setTab("friends"); setShowProposeForm(true); }} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>+ New plan</button>
-        </div>
+        <p className="eyebrow mb-3">up next</p>
         {upcoming.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--mist)" }}>No plans yet — pick a day above and invite a group or friend.</p>
+          <div className="flex items-center gap-2">
+            <Saamy size={30} />
+            <p className="text-sm" style={{ color: "var(--mist)" }}>No plans yet — pick a day above and invite a group or friend.</p>
+          </div>
         ) : (
-          <div className="flex gap-3 overflow-x-auto sync-scroll pb-1" style={{ marginLeft: -4, paddingLeft: 4 }}>
-            {upcoming.map((p) => {
+          <div className="flex flex-col gap-2">
+            {upcoming.map((p, idx) => {
               const target = proposalTarget(p);
               if (!target) return null;
               const participants = proposalParticipants(p);
@@ -928,29 +1013,28 @@ export default function SyncApp() {
               const [y, m, d] = p.dateKey.split("-").map(Number);
               const weekday = DAYS[(new Date(y, m - 1, d).getDay() + 6) % 7];
               return (
-                <div key={p.id} onClick={() => setTab("plans")} className="sync-card rounded-3xl overflow-hidden cursor-pointer flex-shrink-0" style={{ width: 168, background: "var(--ink-2)", border: `1px solid ${confirmed ? "var(--mint)" : "var(--ink-3)"}` }}>
-                  <div style={{ background: hexToRgba(target.color, 0.85), padding: "14px 16px" }}>
-                    <p className="mono text-xs mb-1" style={{ color: "var(--on-accent)", opacity: 0.75 }}>{weekday.toUpperCase()}</p>
-                    <p className="display" style={{ fontSize: 30, color: "var(--on-accent)", lineHeight: 1 }}>{d}</p>
-                    <p className="mono text-xs" style={{ color: "var(--on-accent)", opacity: 0.75 }}>{MONTH_NAMES[m - 1]}</p>
+                <div key={p.id} onClick={() => setTab("plans")} className="sync-card sync-stagger-in rounded-xl flex items-center gap-3 cursor-pointer" style={{ "--i": idx, background: "var(--ink-2)", padding: 10 }}>
+                  <div className="flex flex-col items-center justify-center flex-shrink-0 rounded-lg" style={{ width: 44, height: 44, background: hexToRgba(target.color, 0.18) }}>
+                    <span className="mono" style={{ fontSize: 8, color: target.color, fontWeight: 700 }}>{weekday.toUpperCase().slice(0, 3)}</span>
+                    <span className="display" style={{ fontSize: 16, color: target.color, lineHeight: 1.1 }}>{d}</span>
                   </div>
-                  <div className="p-3">
-                    <p className="text-sm mb-1" style={{ color: "var(--paper)" }}>{p.title}</p>
-                    {p.city && <p className="mono text-xs mb-2 truncate" style={{ color: "var(--mist)" }}>{p.city}</p>}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center -space-x-1.5">
-                        {participants.slice(0, 4).map((pid) => {
-                          const person = peopleById[pid];
-                          if (!person) return null;
-                          return <Avatar key={pid} person={person} size={20} ring="var(--ink-2)" />;
-                        })}
-                      </div>
-                      {confirmed ? (
-                        <span className="mono text-xs rounded-full px-2 py-1" style={{ background: "var(--mint)", color: "var(--on-accent)" }}>✓</span>
-                      ) : (
-                        <span className="mono text-xs" style={{ color: "var(--mist)" }}>{yesCount}/{participants.length}</span>
-                      )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: "var(--paper)" }}>{p.title}</p>
+                    <p className="mono text-xs truncate" style={{ color: "var(--mist)" }}>{p.city ? `${p.city} · ` : ""}{MONTH_NAMES[m - 1]} {d}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center -space-x-1.5">
+                      {participants.slice(0, 3).map((pid) => {
+                        const person = peopleById[pid];
+                        if (!person) return null;
+                        return <Avatar key={pid} person={person} size={18} ring="var(--ink-2)" />;
+                      })}
                     </div>
+                    {confirmed ? (
+                      <span className="mono text-xs rounded-lg px-1.5 py-0.5" style={{ background: "var(--mint)", color: "var(--on-accent)" }}>✓</span>
+                    ) : (
+                      <span className="mono text-xs" style={{ color: "var(--mist)" }}>{yesCount}/{participants.length}</span>
+                    )}
                   </div>
                 </div>
               );
@@ -961,83 +1045,222 @@ export default function SyncApp() {
     );
   };
 
+  // ---- dashboard-style stat panel: two real stat tiles + a 7-day activity
+  // chart (bar height = free/tentative/unmarked, straight from getStatus —
+  // no fabricated hour totals), plus a compact "up next" row underneath ----
+  const NextUpHero = () => {
+    const upcoming = [...proposals]
+      .filter((p) => daysFromToday(p.endDateKey || p.dateKey) >= 0)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const nextPlan = upcoming[0] || null;
+    const next7 = Array.from({ length: 7 }, (_, i) => shiftIso(todayIso, i));
+    const freeDaysNext7 = next7.filter((iso) => getStatus(editingAsId, iso) === "free").length;
+    const plansNext30 = proposals.filter((p) => { const d = daysFromToday(p.endDateKey || p.dateKey); return d >= 0 && d < 30; }).length;
+    const goAddEvent = () => { setTab("friends"); setPlanSectionTab("event"); setPlanSectionFocusAt(Date.now()); };
+
+    return (
+      <div className="sync-card rounded-2xl p-4" style={{ background: "var(--ink-2)" }}>
+        <div className="flex items-center gap-4 mb-4">
+          <div>
+            <p className="display" style={{ fontSize: 30, color: "var(--paper)", lineHeight: 1 }}>{freeDaysNext7}</p>
+            <p className="eyebrow mt-1.5">free · next 7 days</p>
+          </div>
+          <div style={{ width: 1, height: 34, background: "var(--ink-3)" }} />
+          <div>
+            <p className="display" style={{ fontSize: 30, color: "var(--paper)", lineHeight: 1 }}>{plansNext30}</p>
+            <p className="eyebrow mt-1.5">plans · next 30 days</p>
+          </div>
+        </div>
+
+        <p className="eyebrow mb-2">this week</p>
+        <div className="flex items-end gap-2" style={{ height: 48 }}>
+          {next7.map((iso) => {
+            const status = getStatus(editingAsId, iso);
+            const h = status === "free" ? 48 : status === "tentative" ? 26 : 6;
+            const color = status === "free" ? "var(--marigold)" : status === "tentative" ? "var(--sun)" : "var(--ink-3)";
+            return <div key={iso} style={{ flex: 1, height: h, borderRadius: 5, background: color, transition: "height 250ms ease" }} title={`${niceDateLabel(iso)} · ${status || "not marked"}`} />;
+          })}
+        </div>
+        <div className="flex gap-2 mb-4">
+          {next7.map((iso) => {
+            const idx = (new Date(iso).getDay() + 6) % 7;
+            const today = iso === todayIso;
+            return <span key={iso} className="mono text-center" style={{ flex: 1, fontSize: 9, color: today ? "var(--marigold)" : "var(--mist)" }}>{DAYS[idx][0]}</span>;
+          })}
+        </div>
+
+        {nextPlan ? (
+          <div onClick={() => setTab("plans")} className="flex items-center justify-between gap-2 cursor-pointer rounded-xl px-3 py-2.5" style={{ background: "var(--ink)" }}>
+            <div className="min-w-0">
+              <p className="eyebrow mb-0.5">up next</p>
+              <p className="text-sm truncate" style={{ color: "var(--paper)" }}>{nextPlan.title} · {fullDateLabel(nextPlan.dateKey)}</p>
+            </div>
+            <span style={{ color: "var(--mist)", fontSize: 18, flexShrink: 0 }}>›</span>
+          </div>
+        ) : (
+          <button onClick={goAddEvent} className="w-full rounded-xl px-3 py-2.5 text-sm" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>+ Add an event</button>
+        )}
+      </div>
+    );
+  };
+
   // =========================================================================
   // Onboarding — the brand mark shows up ONLY here, never in the main app
   // =========================================================================
-  const OnboardingView = () => <IntroStory onDone={dismissOnboarding} />;
-
   return (
     <PhoneShell
-      background={!showOnboarding ? appBackground : null}
+      background={!showOnboarding ? appBackground : "#0A0B0D"}
       footer={!showOnboarding && <BottomTabBar tab={tab} setTab={setTab} tabs={TABS} />}
       themeMode={themeMode}
     >
-      <div className={`sync-root theme-${themeMode} w-full h-full`}>
+      <div className={`sync-root theme-${themeMode} w-full h-full`} style={showOnboarding ? { background: "#0A0B0D" } : undefined}>
         <style dangerouslySetInnerHTML={{ __html: `
           @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-          .sync-root { --ink:#000000; --ink-2:#1C1C1E; --ink-3:#2C2C2E; --ink-4:#3A3A3C; --paper:#F5F5F7; --marigold:#FF7A1A; --ember:#FF453A; --mint:#32D74B; --sun:#FF9F0A; --mist:#98989D; --rose:#FF375F; --on-accent:#FFFFFF; font-family:'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing:antialiased; background:var(--ink); }
-          .sync-root.theme-light { --ink:#F5F5F7; --ink-2:#FFFFFF; --ink-3:#E5E5EA; --ink-4:#D1D1D6; --paper:#1D1D1F; --mist:#6E6E73; }
-          .sync-root .display { font-family:'Inter', -apple-system, sans-serif; font-weight:700; letter-spacing:-0.02em; }
-          .sync-root .mono { font-family:'Inter', -apple-system, sans-serif; font-weight:500; letter-spacing:-0.01em; }
+          .sync-root { --ink:#0A0B0D; --ink-2:#131418; --ink-3:#1C1E22; --ink-4:#27292E; --paper:#F3F4F6; --marigold:#A9835A; --yellow-hint:#D9C25A; --ember:#8A4A33; --mint:#4F7A42; --sun:#A67A3D; --mist:#86898F; --rose:#8A4D66; --leaf:#6B8A45; --punch:#6B5A94; --sky:#3D6E6C; --on-accent:#F3F4F6; --header:#0A0B0D; font-family:'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing:antialiased; background:var(--ink); }
+          .sync-root.theme-light { --ink:#EEF0F2; --ink-2:#FFFFFF; --ink-3:#E2E4E8; --ink-4:#CBCED4; --paper:#0A0B0D; --mist:#6B6E76; --header:#0A0B0D; }
+          .sync-root .display { font-family:'Inter', -apple-system, sans-serif; font-weight:800; letter-spacing:-0.02em; }
+          .sync-root .mono { font-family:'Inter', -apple-system, sans-serif; font-weight:500; letter-spacing:0.01em; }
+          .sync-root .eyebrow { font-family:'Inter', -apple-system, sans-serif; font-weight:700; font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--mist); }
+          /* ---- sharp, modern corner system — collapses Tailwind's rounded-lg/xl/2xl/3xl down to small, consistent radii app-wide; rounded-full stays untouched for dots/avatars/pills ---- */
+          .sync-root .rounded-lg { border-radius:6px !important; }
+          .sync-root .rounded-xl { border-radius:7px !important; }
+          .sync-root .rounded-2xl { border-radius:9px !important; }
+          .sync-root .rounded-3xl { border-radius:11px !important; }
           .sync-cell { transition:background-color 120ms ease, transform 80ms ease; user-select:none; cursor:pointer; }
           .sync-cell:hover { transform:scale(1.05); }
           .sync-daycell { transition:background-color 120ms ease, transform 100ms ease; user-select:none; }
           .sync-daycell:hover { transform:scale(1.08); }
-          .sync-tab { transition:color 150ms ease, border-color 150ms ease; font-weight:600; }
-          .sync-chip { transition:background-color 150ms ease, color 150ms ease, border-color 150ms ease; cursor:pointer; }
-          .sync-card { transition:transform 150ms ease, box-shadow 150ms ease; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
-          .sync-card:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(0,0,0,0.12); }
-          .sync-group-card { transition:box-shadow 150ms ease; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-          .sync-group-card:hover { box-shadow:0 8px 20px rgba(0,0,0,0.1); }
-          .sync-toggle-btn { transition:background-color 150ms ease, color 150ms ease; }
-          .sync-add-btn { transition:background-color 150ms ease, border-color 150ms ease, transform 150ms ease; }
+          .sync-tab { transition:color 150ms ease, border-color 150ms ease; font-weight:700; }
+          .sync-chip { transition:background-color 150ms ease, color 150ms ease, border-color 150ms ease; cursor:pointer; border-radius:7px !important; }
+          .sync-card { transition:transform 150ms ease, box-shadow 150ms ease; box-shadow:0 1px 2px rgba(0,0,0,0.5); border-radius:9px !important; }
+          .sync-card:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.55); }
+          .sync-group-card { transition:box-shadow 150ms ease; box-shadow:0 1px 2px rgba(0,0,0,0.45); border-radius:9px !important; }
+          .sync-group-card:hover { box-shadow:0 6px 16px rgba(0,0,0,0.5); }
+          .sync-toggle-track { background:var(--ink) !important; border-radius:7px !important; }
+          .sync-toggle-btn { transition:background-color 150ms ease, color 150ms ease; border-radius:5px !important; font-weight:700; }
+          .sync-add-btn { transition:background-color 150ms ease, border-color 150ms ease, transform 150ms ease; border-radius:7px !important; }
           .sync-add-btn:hover { transform:scale(1.02); border-color:var(--marigold) !important; }
           .sync-swatch { transition:transform 120ms ease; cursor:pointer; }
           .sync-swatch:hover { transform:scale(1.12); }
           .sync-scroll::-webkit-scrollbar { height:6px; width:6px; }
           .sync-scroll::-webkit-scrollbar-thumb { background:var(--ink-3); border-radius:8px; }
-          .sync-icon-btn { transition:background-color 150ms ease, transform 150ms ease; cursor:pointer; }
+          .sync-icon-btn { transition:background-color 150ms ease, transform 150ms ease; cursor:pointer; border-radius:7px !important; }
           .sync-icon-btn:hover { transform:scale(1.08); }
+          .sync-root input:not([type=checkbox]):not([type=radio]):not([type=range]), .sync-root select, .sync-root textarea { border-radius:6px !important; }
+          .sync-root :where(button,input,select,textarea,[tabindex]):focus-visible { outline:2px solid var(--marigold); outline-offset:2px; }
+          .sync-root button:active { transform:scale(0.96); }
+          @keyframes sync-fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+          .sync-tabpanel { animation:sync-fade-up 260ms cubic-bezier(.22,1,.36,1) both; }
+          @keyframes sync-sheet-up { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:translateY(0); } }
+          .sync-sheet-in { animation:sync-sheet-up 360ms cubic-bezier(.22,1,.36,1) both; }
+          @keyframes sync-dialog-pop { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+          .sync-dialog-in { animation:sync-dialog-pop 260ms cubic-bezier(.22,1,.36,1) both; }
+          @keyframes sync-pop { from { opacity:0; transform:scale(0.94) translateY(-4px); } to { opacity:1; transform:scale(1) translateY(0); } }
+          .sync-pop-in { animation:sync-pop 220ms cubic-bezier(.22,1,.36,1) both; }
+          @keyframes sync-fade { from { opacity:0; } to { opacity:1; } }
+          .sync-fade-in { animation:sync-fade 220ms ease both; }
+          @keyframes sync-stagger-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+          .sync-stagger-in { opacity:0; animation:sync-stagger-in 460ms cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i, 0) * 70ms); }
+          @keyframes sync-fab-pulse {
+            0%, 100% { box-shadow:0 8px 20px rgba(0,0,0,0.3), 0 0 0 0 color-mix(in srgb, var(--marigold) 55%, transparent); }
+            50% { box-shadow:0 8px 20px rgba(0,0,0,0.3), 0 0 0 10px color-mix(in srgb, var(--marigold) 0%, transparent); }
+          }
+          .sync-fab { animation:sync-fab-in 320ms cubic-bezier(.22,1,.36,1) both, sync-fab-pulse 2.4s ease-in-out 480ms infinite; }
+          .sync-fab:active { transform:scale(0.94) !important; }
+          @keyframes sync-fab-in { from { transform:scale(0.8); opacity:0; } to { transform:scale(1); opacity:1; } }
+          @keyframes sync-bob { 0%, 100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+          .sync-bob { animation:sync-bob 3.2s ease-in-out infinite; }
+          @keyframes sync-mascot-float { 0%, 100% { transform:translateY(0) rotate(0deg); } 50% { transform:translateY(-3px) rotate(-4deg); } }
+          .sync-mascot-loop { display:inline-block; animation:sync-mascot-float 3.6s ease-in-out infinite; transform-origin:50% 100%; }
+          .sync-mascot-btn { border:0; background:transparent; padding:0; margin:0; line-height:0; cursor:pointer; }
+          .sync-mascot-btn:active { transform:scale(0.92); }
+          @keyframes sync-mascot-tickle {
+            0% { transform:rotate(0deg) scale(1); }
+            15% { transform:rotate(-16deg) scale(1.06); }
+            30% { transform:rotate(14deg) scale(1.1); }
+            45% { transform:rotate(-11deg) scale(1.06); }
+            60% { transform:rotate(9deg) scale(1.03); }
+            75% { transform:rotate(-5deg) scale(1.01); }
+            100% { transform:rotate(0deg) scale(1); }
+          }
+          .sync-mascot-tickle { display:inline-block; animation:sync-mascot-tickle 650ms ease-in-out; transform-origin:50% 100%; }
+          @keyframes sync-day-pop { from { transform:scale(0.85); } to { transform:scale(1); } }
+          .sync-day-pop { animation:sync-day-pop 220ms cubic-bezier(.22,1,.36,1) both; }
+          @keyframes sync-header-flow { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
+          .sync-header-anim {
+            background-image: linear-gradient(120deg, var(--ink) 0%, var(--ink-2) 30%, color-mix(in srgb, var(--marigold) 24%, var(--ink)) 55%, var(--ink-2) 78%, var(--ink) 100%);
+            background-size: 260% 260%;
+            animation: sync-header-flow 16s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .sync-root *, .sync-root *::before, .sync-root *::after { animation:none !important; transition-duration:0.01ms !important; }
+          }
         `}} />
 
         {showOnboarding ? (
-          <OnboardingView />
+          <IntroStory onDone={dismissOnboarding} onName={(name) => updatePerson("you", { name })} />
         ) : (
           <>
-            <header className="px-5 pt-1 pb-3 flex items-center justify-between" style={{ position: "sticky", top: 0, zIndex: 25, background: "var(--ink)" }}>
-              <p className="display text-2xl" style={{ color: "var(--paper)" }}>{TAB_TITLES[tab]}</p>
+            <header
+              className="sync-header-anim px-5 pt-5 pb-7 flex items-center justify-between"
+              style={{
+                borderBottomLeftRadius: 10, borderBottomRightRadius: 10,
+                marginBottom: 16,
+                position: "sticky", top: 0, zIndex: 25,
+              }}
+            >
+              <div className="flex items-center gap-2.5" data-tour="tour-mascot">
+                <button
+                  type="button"
+                  onClick={tickleMascot}
+                  aria-label="Tickle Saamy"
+                  className="sync-mascot-btn"
+                >
+                  <Saamy size={30} pose={tickled ? "tickled" : "default"} className={tickled ? "sync-mascot-tickle" : "sync-mascot-loop"} />
+                </button>
+                <div>
+                  <p className="eyebrow" style={{ color: "rgba(255,255,255,0.55)", marginBottom: 2 }}>Sync</p>
+                  <p className="display text-xl" style={{ color: "#FFFFFF", letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>{TAB_TITLES[tab]}</p>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 {people.length > 1 && (
                   <button
                     onClick={() => { setFriendsView(groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you"); setTab("friends"); }}
                     aria-label="Friends' calendars"
-                    className="sync-icon-btn flex items-center justify-center rounded-full"
-                    style={{ width: 34, height: 34, background: "var(--ink-2)", border: "1px solid var(--ink-3)", color: "var(--mist)" }}
+                    className="sync-icon-btn flex items-center justify-center rounded-xl"
+                    style={{ width: 34, height: 34, background: "var(--ink-4)", color: "var(--paper)" }}
                   >
-                    <Users size={16} />
+                    <Users size={15} />
                   </button>
                 )}
                 <button
                   onClick={() => openPersonProfile("you")}
                   aria-label="Your profile"
-                  className="sync-icon-btn flex items-center justify-center rounded-full"
-                  style={{ width: 34, height: 34, border: "1px solid var(--ink-3)" }}
+                  className="sync-icon-btn flex items-center justify-center rounded-xl"
+                  style={{ width: 34, height: 34, background: "var(--ink-4)" }}
                 >
-                  <Avatar person={you} size={32} />
+                  <Avatar person={you} size={30} />
                 </button>
                 <button
                   onClick={() => setShowSettings(true)}
                   aria-label="Settings"
-                  className="sync-icon-btn flex items-center justify-center rounded-full"
-                  style={{ width: 34, height: 34, background: "var(--ink-2)", border: "1px solid var(--ink-3)", color: "var(--mist)" }}
+                  data-tour="tour-settings"
+                  className="sync-icon-btn flex items-center justify-center rounded-xl"
+                  style={{ width: 34, height: 34, background: "var(--ink-4)", color: "var(--paper)" }}
                 >
-                  <Settings size={16} />
+                  <Settings size={15} />
                 </button>
               </div>
             </header>
 
             {tab === "groups" && (
-              <main className="px-5 pb-28">
+              <>
+              <main className="px-5 pb-28 sync-tabpanel">
+                <div className="mb-4">
+                  <NextUpHero />
+                </div>
+
                 <div className="space-y-4 mb-6">
                   <MiniCalendar />
                   <DayDetail />
@@ -1063,31 +1286,33 @@ export default function SyncApp() {
                   {showManage && (
                     <div className="px-4 pb-4">
                       <div className="flex items-center justify-between mb-2 pt-1">
-                        <p className="mono text-xs" style={{ color: "var(--mist)" }}>people</p>
+                        <p className="eyebrow">people</p>
                         {people.length > 4 && (
-                          <input value={peopleSearch} onChange={(e) => setPeopleSearch(e.target.value)} placeholder="Search..." className="text-xs rounded-full px-3 py-1 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 100 }} />
+                          <input value={peopleSearch} onChange={(e) => setPeopleSearch(e.target.value)} placeholder="Search..." className="text-xs rounded-xl px-3 py-1 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 100 }} />
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <div onClick={() => openPersonProfile("you")} className="sync-chip flex items-center gap-2 rounded-full pl-1 pr-3 py-1" style={{ border: "1px solid var(--marigold)" }}>
+                        <button onClick={() => openPersonProfile("you")} className="sync-chip flex items-center gap-2 rounded-xl pl-1 pr-3 py-1" style={{ border: "1px solid var(--marigold)" }}>
                           <Avatar person={you} size={20} />
                           <span className="text-sm" style={{ color: "var(--paper)" }}>You</span>
                           <span className="mono text-xs" style={{ color: "var(--marigold)" }}>edit profile</span>
-                        </div>
+                        </button>
                         {people.filter((p) => p.id !== "you" && p.name.toLowerCase().includes(peopleSearch.toLowerCase())).map((p) => (
-                          <div key={p.id} onClick={() => openPersonProfile(p.id)} className="sync-chip flex items-center gap-2 rounded-full pl-1 pr-2 py-1" style={{ border: "1px solid var(--ink-3)" }}>
-                            <Avatar person={p} size={20} />
-                            <span className="text-sm" style={{ color: "var(--paper)" }}>{p.name}</span>
+                          <div key={p.id} className="sync-chip flex items-center gap-2 rounded-xl pl-1 pr-2 py-1" style={{ border: "1px solid var(--ink-3)" }}>
+                            <button onClick={() => openPersonProfile(p.id)} className="flex items-center gap-2" aria-label={`Open ${p.name}'s profile`}>
+                              <Avatar person={p} size={20} />
+                              <span className="text-sm" style={{ color: "var(--paper)" }}>{p.name}</span>
+                            </button>
                             {groups.filter((g) => g.memberIds.includes(p.id)).map((g) => (
                               <span key={g.id} title={`In ${g.name}`} className="inline-block rounded-full" style={{ width: 8, height: 8, background: g.color, border: "1px solid var(--ink)" }} />
                             ))}
-                            <button onClick={(e) => { e.stopPropagation(); seedPerson(p.id); }} className="sync-icon-btn text-xs" style={{ color: "var(--marigold)" }} title="Simulate calendar sync">⟳</button>
-                            <button onClick={(e) => { e.stopPropagation(); removeFriend(p.id); }} className="text-xs ml-1" style={{ color: "var(--mist)" }} aria-label={`Remove ${p.name}`}>✕</button>
+                            <button onClick={() => seedPerson(p.id)} className="sync-icon-btn text-xs" style={{ color: "var(--marigold)" }} title="Simulate calendar sync" aria-label={`Simulate calendar sync for ${p.name}`}>⟳</button>
+                            <button onClick={() => removeFriend(p.id)} className="text-xs ml-1" style={{ color: "var(--mist)" }} aria-label={`Remove ${p.name}`}>✕</button>
                           </div>
                         ))}
                         {!showAddFriend && (
-                          <button onClick={() => setShowAddFriend(true)} className="sync-add-btn flex items-center gap-2 rounded-full pl-2 pr-4 py-1.5" style={{ background: "transparent", border: "1px dashed var(--ink-3)", color: "var(--paper)" }}>
-                            <span className="flex items-center justify-center rounded-full" style={{ width: 18, height: 18, background: "var(--ink-3)", color: "var(--marigold)", fontSize: 13, lineHeight: 1 }}>+</span>
+                          <button onClick={() => setShowAddFriend(true)} className="sync-add-btn flex items-center gap-2 rounded-xl pl-2 pr-4 py-1.5" style={{ background: "transparent", border: "1px dashed var(--ink-3)", color: "var(--paper)" }}>
+                            <span className="flex items-center justify-center rounded-xl" style={{ width: 18, height: 18, background: "var(--ink-3)", color: "var(--marigold)", fontSize: 13, lineHeight: 1 }}>+</span>
                             <span className="text-sm">Add friend</span>
                           </button>
                         )}
@@ -1095,27 +1320,27 @@ export default function SyncApp() {
                       {showAddFriend && (
                         <div className="rounded-xl p-4 mb-4" style={{ background: "var(--ink)" }}>
                           <div className="flex flex-wrap items-center gap-2 mb-3">
-                            <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFriend()} placeholder="Friend's name" autoFocus className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 140 }} />
-                            <input value={newCity} onChange={(e) => setNewCity(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFriend()} placeholder="City" className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 120 }} />
-                            <select value={newTz} onChange={(e) => setNewTz(Number(e.target.value))} className="text-sm rounded-full px-3 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
+                            <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFriend()} placeholder="Friend's name" autoFocus className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 140 }} />
+                            <input value={newCity} onChange={(e) => setNewCity(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addFriend()} placeholder="City" className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 120 }} />
+                            <select value={newTz} onChange={(e) => setNewTz(Number(e.target.value))} className="text-sm rounded-xl px-3 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
                               {TZ_OPTIONS.map((t) => (<option key={t.offset} value={t.offset}>{t.label}</option>))}
                             </select>
                           </div>
                           <div className="flex items-center gap-2 mb-4">
                             <span className="text-xs mono mr-1" style={{ color: "var(--mist)" }}>color</span>
-                            {COLOR_PALETTE.map((c) => (<span key={c.hex} onClick={() => setNewColor(c.hex)} className="sync-swatch inline-block rounded-full" style={{ width: 20, height: 20, background: c.hex, boxShadow: newColor === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />))}
+                            {COLOR_PALETTE.map((c) => (<button key={c.hex} onClick={() => setNewColor(c.hex)} aria-label={`Set color to ${c.name}`} className="sync-swatch inline-block rounded-xl" style={{ width: 20, height: 20, background: c.hex, boxShadow: newColor === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />))}
                           </div>
                           <div className="mb-4">
                             <AvatarPicker person={{ name: newName || "?", color: newColor, avatarEmoji: newAvatarEmoji, avatarPhoto: newAvatarPhoto }} onChange={(patch) => { if ("avatarEmoji" in patch) setNewAvatarEmoji(patch.avatarEmoji); if ("avatarPhoto" in patch) setNewAvatarPhoto(patch.avatarPhoto); }} />
                           </div>
                           <div className="flex items-center gap-2">
-                            <button onClick={addFriend} className="text-sm rounded-full px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Add friend</button>
-                            <button onClick={() => setShowAddFriend(false)} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                            <button onClick={addFriend} className="text-sm rounded-xl px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add friend</button>
+                            <button onClick={() => setShowAddFriend(false)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
                           </div>
                         </div>
                       )}
 
-                      <p className="mono text-xs mb-2" style={{ color: "var(--mist)" }}>groups</p>
+                      <p className="eyebrow mb-2">groups</p>
                       <div className="flex flex-col gap-2 mb-1">
                         {groups.map((g) => {
                           const daysThisMonth = ALL_YEAR_KEYS.filter((k) => groupFullyFree(g, k) && daysFromToday(k) >= 0 && daysFromToday(k) < 30).length;
@@ -1131,24 +1356,24 @@ export default function SyncApp() {
                         );})}
                         {!showGroupForm && (
                           <button onClick={() => { setShowGroupForm(true); setGroupFormError(""); }} className="sync-add-btn flex items-center gap-2 rounded-xl px-4 py-3" style={{ background: "transparent", border: "1px dashed var(--ink-3)", color: "var(--paper)" }}>
-                            <span className="flex items-center justify-center rounded-full" style={{ width: 18, height: 18, background: "var(--ink-3)", color: "var(--marigold)", fontSize: 13, lineHeight: 1 }}>+</span>
+                            <span className="flex items-center justify-center rounded-xl" style={{ width: 18, height: 18, background: "var(--ink-3)", color: "var(--marigold)", fontSize: 13, lineHeight: 1 }}>+</span>
                             <span className="text-sm">New group</span>
                           </button>
                         )}
                       </div>
                       {showGroupForm && (
                         <div className="rounded-xl p-4 mt-3" style={{ background: "var(--ink)" }}>
-                          <input value={newGroupName} onChange={(e) => { setNewGroupName(e.target.value); setGroupFormError(""); }} placeholder="Group name (e.g. Freshman Hall, Cousins)" className="text-sm rounded-full px-4 py-2 outline-none mb-3 w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <input value={newGroupName} onChange={(e) => { setNewGroupName(e.target.value); setGroupFormError(""); }} placeholder="Group name (e.g. Freshman Hall, Cousins)" className="text-sm rounded-xl px-4 py-2 outline-none mb-3 w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                           <div className="flex items-center gap-2 mb-3 flex-wrap">
                             <span className="text-xs mono mr-1" style={{ color: "var(--mist)" }}>color</span>
-                            {COLOR_PALETTE.map((c) => (<span key={c.hex} onClick={() => setNewGroupColor(c.hex)} className="sync-swatch inline-block rounded-full" style={{ width: 20, height: 20, background: c.hex, boxShadow: newGroupColor === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />))}
+                            {COLOR_PALETTE.map((c) => (<button key={c.hex} onClick={() => setNewGroupColor(c.hex)} aria-label={`Set color to ${c.name}`} className="sync-swatch inline-block rounded-xl" style={{ width: 20, height: 20, background: c.hex, boxShadow: newGroupColor === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />))}
                           </div>
                           <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>2+ members — one friend isn't a group, message them directly instead.</p>
                           <div className="flex flex-wrap gap-2 mb-4">
                             {people.filter((p) => p.id !== "you").map((f) => {
                               const active = newGroupMembers.includes(f.id);
                               return (
-                                <button key={f.id} onClick={() => toggleGroupMember(f.id)} className="sync-chip text-sm rounded-full px-3 py-1.5 flex items-center gap-2" style={{ background: active ? "var(--ink-3)" : "transparent", border: `1px solid ${active ? f.color : "var(--ink-3)"}`, color: "var(--paper)" }}>
+                                <button key={f.id} onClick={() => toggleGroupMember(f.id)} className="sync-chip text-sm rounded-xl px-3 py-1.5 flex items-center gap-2" style={{ background: active ? "var(--ink-3)" : "transparent", border: `1px solid ${active ? f.color : "var(--ink-3)"}`, color: "var(--paper)" }}>
                                   <Avatar person={f} size={16} />
                                   {f.name}
                                 </button>
@@ -1158,10 +1383,10 @@ export default function SyncApp() {
                           </div>
                           {groupFormError && <p className="text-xs mono mb-3" style={{ color: "var(--ember)" }}>{groupFormError}</p>}
                           <div className="flex items-center gap-2">
-                            <button onClick={createGroup} className="text-sm rounded-full px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>
+                            <button onClick={createGroup} className="text-sm rounded-xl px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>
                               Create group
                             </button>
-                            <button onClick={() => { setShowGroupForm(false); setNewGroupMembers([]); setGroupFormError(""); }} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                            <button onClick={() => { setShowGroupForm(false); setNewGroupMembers([]); setGroupFormError(""); }} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
                           </div>
                         </div>
                       )}
@@ -1170,6 +1395,21 @@ export default function SyncApp() {
                 </section>
 
               </main>
+              <button
+                onClick={() => { setTab("friends"); setPlanSectionTab("event"); setEventDate(selectedDayIso); setPlanSectionFocusAt(Date.now()); }}
+                aria-label="Add event"
+                data-tour="tour-fab"
+                className="sync-fab flex items-center justify-center rounded-2xl"
+                style={{
+                  position: "absolute", right: 20, bottom: 94, zIndex: 35,
+                  width: 56, height: 56,
+                  background: "var(--marigold)", color: "var(--on-accent)",
+                  boxShadow: "0 8px 20px rgba(0,0,0,0.45)",
+                }}
+              >
+                <span style={{ fontSize: 28, lineHeight: 1, fontWeight: 600, marginTop: -2 }}>+</span>
+              </button>
+              </>
             )}
 
             {tab === "friends" && (() => {
@@ -1179,52 +1419,158 @@ export default function SyncApp() {
               const weekMode = viewingGroup ? "group" : (friendsViewId === "you" ? "mine" : "person");
               const weekColor = viewingGroup ? viewingGroup.color : weekMode === "mine" ? editingAsPerson.color : viewingPerson.color;
               const mondayOfThisWeek = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+              // Who overlap is computed against — null when viewing "You" alone, since
+              // a solo view has nothing to find shared time with.
+              const targetIds = viewingGroup ? ["you", ...viewingGroup.memberIds] : (weekMode === "person" ? ["you", viewingPerson.id] : null);
+              const canShowBestTimes = targetIds !== null;
+              const effectiveViewMode = canShowBestTimes ? friendsViewMode : "calendar";
+
+              // Best Times — Next 12 Months: rank every upcoming day by how many of
+              // targetIds are free, partial matches included (not just 100%-free days).
+              const bestDaysList = (() => {
+                if (!targetIds) return [];
+                const total = targetIds.length;
+                const scored = [];
+                for (const key of ALL_YEAR_KEYS) {
+                  if (daysFromToday(key) < 0) continue;
+                  const free = targetIds.filter((id) => getStatus(id, key) === "free").length;
+                  if (free === 0) continue;
+                  scored.push({ key, free, total });
+                }
+                scored.sort((a, b) => b.free - a.free || a.key.localeCompare(b.key));
+                return scored.slice(0, 8);
+              })();
+
+              // Best Times — This Week: contiguous free-count runs per day, from the
+              // same hourly availability the week grid below already reads.
+              const bestHourList = (() => {
+                if (!targetIds) return [];
+                const total = targetIds.length;
+                const runs = [];
+                DAYS.forEach((day, di) => {
+                  const date = new Date(mondayOfThisWeek);
+                  date.setDate(date.getDate() + di);
+                  const iso = isoDate(date);
+                  let cur = null;
+                  HOURS.forEach((hour, idx) => {
+                    const free = targetIds.filter((id) => getStatus(id, `${day}-${hour}`) === "free").length;
+                    if (cur && cur.free === free) cur.endIdx = idx;
+                    else { if (cur) runs.push(cur); cur = { day, di, iso, free, startIdx: idx, endIdx: idx }; }
+                  });
+                  if (cur) runs.push(cur);
+                });
+                const withTimes = runs.filter((r) => r.free > 0).map((r) => ({
+                  ...r, total,
+                  startHour: HOURS[r.startIdx], endHour: HOURS[r.endIdx] + 1,
+                }));
+                withTimes.sort((a, b) => b.free - a.free || (b.endHour - b.startHour) - (a.endHour - a.startHour) || (a.di - b.di) || (a.startHour - b.startHour));
+                return withTimes.slice(0, 6);
+              })();
 
               return (
-              <main className="px-5 pb-28">
+              <main className="px-5 pb-28 sync-tabpanel">
                 <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>See how your availability lines up with everyone else's, then turn a shared free day into a plan.</p>
 
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {groups.map((g) => (
-                    <button key={g.id} onClick={() => setFriendsView(g.id)} className="sync-chip text-sm rounded-full px-3 py-1.5 flex items-center gap-1.5" style={{ background: friendsViewId === g.id ? g.color : "transparent", color: friendsViewId === g.id ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === g.id ? g.color : "var(--ink-3)"}` }}>
-                      <span>{g.shape}</span>{g.name}
-                    </button>
-                  ))}
-                  {people.filter((p) => p.id !== "you").map((p) => (
-                    <button key={p.id} onClick={() => setFriendsView(p.id)} className="sync-chip text-sm rounded-full pl-1 pr-3 py-1 flex items-center gap-1.5" style={{ background: friendsViewId === p.id ? p.color : "transparent", color: friendsViewId === p.id ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === p.id ? p.color : "var(--ink-3)"}` }}>
-                      <Avatar person={p} size={18} />{p.name}
-                    </button>
-                  ))}
-                  <button onClick={() => setFriendsView("you")} className="sync-chip text-sm rounded-full px-3 py-1.5" style={{ background: friendsViewId === "you" ? "var(--marigold)" : "transparent", color: friendsViewId === "you" ? "var(--on-accent)" : "var(--paper)", border: `1px solid ${friendsViewId === "you" ? "var(--marigold)" : "var(--ink-3)"}` }}>You</button>
+                <div className="mb-4 rounded-2xl overflow-hidden" style={{ background: "var(--ink-2)" }}>
+                  {groups.length > 0 && (
+                    <>
+                      <p className="eyebrow px-4 pt-3 pb-1.5">groups</p>
+                      {groups.map((g) => {
+                        const active = friendsViewId === g.id;
+                        return (
+                          <button key={g.id} onClick={() => setFriendsView(g.id)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left" style={{ background: active ? "var(--marigold)" : "transparent" }}>
+                            <span style={{ fontSize: 16 }}>{g.shape}</span>
+                            <span className="text-sm flex-1" style={{ color: active ? "var(--on-accent)" : "var(--paper)", fontWeight: active ? 700 : 500 }}>{g.name}</span>
+                            <span className="mono text-xs" style={{ color: active ? "var(--on-accent)" : "var(--mist)", opacity: active ? 0.8 : 1 }}>{g.memberIds.length + 1}</span>
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                  <p className="eyebrow px-4 pt-3 pb-1.5">people</p>
+                  <button onClick={() => setFriendsView("you")} className="w-full flex items-center gap-3 px-4 py-2.5 text-left" style={{ background: friendsViewId === "you" ? "var(--marigold)" : "transparent" }}>
+                    <Avatar person={you} size={22} />
+                    <span className="text-sm flex-1" style={{ color: friendsViewId === "you" ? "var(--on-accent)" : "var(--paper)", fontWeight: friendsViewId === "you" ? 700 : 500 }}>You</span>
+                  </button>
+                  {people.filter((p) => p.id !== "you").map((p) => {
+                    const active = friendsViewId === p.id;
+                    return (
+                      <button key={p.id} onClick={() => setFriendsView(p.id)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left" style={{ background: active ? "var(--marigold)" : "transparent" }}>
+                        <Avatar person={p} size={22} />
+                        <span className="text-sm flex-1" style={{ color: active ? "var(--on-accent)" : "var(--paper)", fontWeight: active ? 700 : 500 }}>{p.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Horizon */}
                 <p className="display text-lg mb-3" style={{ color: "var(--paper)" }}>
                   {weekMode === "mine" ? "Mark your availability" : weekMode === "group" ? `${viewingGroup.name}'s availability` : `${viewingPerson.name}'s availability`}
                 </p>
-                <div className="flex items-center gap-1 mb-3 w-fit rounded-full p-1" style={{ background: "var(--ink-2)" }}>
-                  <button onClick={() => setHorizon("week")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: horizon === "week" ? "var(--marigold)" : "transparent", color: horizon === "week" ? "var(--on-accent)" : "var(--mist)" }}>This Week</button>
-                  <button onClick={() => setHorizon("year")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: horizon === "year" ? "var(--marigold)" : "transparent", color: horizon === "year" ? "var(--on-accent)" : "var(--mist)" }}>Next 12 Months</button>
-                </div>
-
-                <div className="flex items-center gap-3 mb-3 flex-wrap text-xs mono" style={{ color: "var(--mist)" }}>
-                  {weekMode === "group" ? (
-                    <>
-                      <span className="flex items-center gap-1">{moonPhaseEmoji(0)} nobody free</span>
-                      <span className="flex items-center gap-1">{moonPhaseEmoji(0.5)} half free</span>
-                      <span className="flex items-center gap-1">{moonPhaseEmoji(1)} everyone free</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, border: "1px solid var(--ink-3)" }} />not marked</span>
-                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: weekColor }} />free</span>
-                      <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: tentativePattern(weekColor), border: `1px solid ${weekColor}` }} />tentative</span>
-                    </>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <div className="sync-toggle-track flex items-center gap-1 w-fit rounded-xl p-1" style={{ background: "var(--ink-2)" }}>
+                    <button onClick={() => setHorizon("week")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: horizon === "week" ? "var(--marigold)" : "transparent", color: horizon === "week" ? "var(--on-accent)" : "var(--mist)" }}>This Week</button>
+                    <button onClick={() => setHorizon("year")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: horizon === "year" ? "var(--marigold)" : "transparent", color: horizon === "year" ? "var(--on-accent)" : "var(--mist)" }}>Next 12 Months</button>
+                  </div>
+                  {canShowBestTimes && (
+                    <div className="sync-toggle-track flex items-center gap-1 w-fit rounded-xl p-1" style={{ background: "var(--ink-2)" }}>
+                      <button onClick={() => setFriendsViewMode("calendar")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: friendsViewMode === "calendar" ? "var(--marigold)" : "transparent", color: friendsViewMode === "calendar" ? "var(--on-accent)" : "var(--mist)" }}>Calendar</button>
+                      <button onClick={() => setFriendsViewMode("best")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: friendsViewMode === "best" ? "var(--marigold)" : "transparent", color: friendsViewMode === "best" ? "var(--on-accent)" : "var(--mist)" }}>Best times</button>
+                    </div>
                   )}
-                  {weekMode !== "mine" && <span>· not editable — switch to "You" to mark your own</span>}
                 </div>
 
-                {horizon === "week" ? (
+                {effectiveViewMode === "best" ? (
+                  <p className="text-xs mono mb-3" style={{ color: "var(--mist)" }}>Ranked by how many people are free — tap a time to turn it into a real invitation.</p>
+                ) : (
+                  <div className="flex items-center gap-3 mb-3 flex-wrap text-xs mono" style={{ color: "var(--mist)" }}>
+                    {weekMode === "group" ? (
+                      <>
+                        <span className="flex items-center gap-1"><SaamyFace frac={0} size={14} /> nobody free</span>
+                        <span className="flex items-center gap-1"><SaamyFace frac={0.5} size={14} /> half free</span>
+                        <span className="flex items-center gap-1"><SaamyFace frac={1} size={14} /> everyone free</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, border: "1px solid var(--ink-3)" }} />not marked</span>
+                        <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: weekColor }} />free</span>
+                        <span className="flex items-center gap-1"><span className="inline-block rounded-full" style={{ width: 10, height: 10, background: tentativePattern(weekColor), border: `1px solid ${weekColor}` }} />tentative</span>
+                      </>
+                    )}
+                    {weekMode !== "mine" && <span>· not editable — switch to "You" to mark your own</span>}
+                  </div>
+                )}
+
+                {effectiveViewMode === "best" ? (
+                  <section className="rounded-2xl p-3 space-y-2" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
+                    {(horizon === "week" ? bestHourList : bestDaysList).length === 0 ? (
+                      <div className="flex items-center gap-2 p-1">
+                        <Saamy size={30} />
+                        <p className="text-sm" style={{ color: "var(--mist)" }}>No overlapping free time yet — mark more availability above, or sync a friend's calendar in Manage people.</p>
+                      </div>
+                    ) : horizon === "week" ? (
+                      bestHourList.map((run, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2" style={{ background: "var(--ink)" }}>
+                          <div>
+                            <p className="text-sm" style={{ color: "var(--paper)" }}>{DAYS_FULL[run.di]}, {MONTH_NAMES[new Date(run.iso).getMonth()]} {new Date(run.iso).getDate()}</p>
+                            <p className="mono text-xs" style={{ color: "var(--mist)" }}>{hourClockLabel(run.startHour)}–{hourClockLabel(run.endHour)} · {run.free} of {run.total} available</p>
+                          </div>
+                          <button onClick={() => openInviteModal(viewingGroup ? "group" : "person", friendsViewId, run.iso, null, `${hourClockLabel(run.startHour)}–${hourClockLabel(run.endHour)}`)} className="text-xs rounded-xl px-3 py-1.5 flex-shrink-0" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Propose</button>
+                        </div>
+                      ))
+                    ) : (
+                      bestDaysList.map((d, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2" style={{ background: "var(--ink)" }}>
+                          <div>
+                            <p className="text-sm" style={{ color: "var(--paper)" }}>{fullDateLabel(d.key)}</p>
+                            <p className="mono text-xs" style={{ color: "var(--mist)" }}>all day · {d.free} of {d.total} available</p>
+                          </div>
+                          <button onClick={() => openInviteModal(viewingGroup ? "group" : "person", friendsViewId, d.key)} className="text-xs rounded-xl px-3 py-1.5 flex-shrink-0" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Propose</button>
+                        </div>
+                      ))
+                    )}
+                  </section>
+                ) : horizon === "week" ? (
                   <section className="rounded-2xl p-3 overflow-x-auto sync-scroll" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
                     <div style={{ minWidth: 640 }}>
                       <div className="grid mb-2" style={{ gridTemplateColumns: `40px repeat(7, 1fr)` }}>
@@ -1242,8 +1588,8 @@ export default function SyncApp() {
                           return (
                             <div key={day} className="flex flex-col items-center gap-0.5">
                               <span className="mono" style={{ fontSize: 9, color: today ? "var(--marigold)" : "var(--mist)" }}>{day.toUpperCase()}</span>
-                              <span className="mono flex items-center justify-center rounded-full" style={{ width: 22, height: 22, background: today ? "var(--marigold)" : "transparent", color: today ? "var(--on-accent)" : "var(--paper)", fontSize: 12 }}>{date.getDate()}</span>
-                              {dayFrac !== null && <span style={{ fontSize: 11 }} title={`${Math.round(dayFrac * 100)}% free on average`}>{moonPhaseEmoji(dayFrac)}</span>}
+                              <span className="mono flex items-center justify-center rounded-xl" style={{ width: 22, height: 22, background: today ? "var(--marigold)" : "transparent", color: today ? "var(--on-accent)" : "var(--paper)", fontSize: 12 }}>{date.getDate()}</span>
+                              {dayFrac !== null && <SaamyFace frac={dayFrac} size={14} title={`${Math.round(dayFrac * 100)}% free on average`} />}
                             </div>
                           );
                         })}
@@ -1282,7 +1628,7 @@ export default function SyncApp() {
                                 const bg = weekMode === "group" ? hexToRgba(weekColor, 0.2 + run.val * 0.7) : run.val === "free" ? weekColor : tentativePattern(weekColor);
                                 const label = weekMode !== "group" && run.len >= 2 ? (run.val === "free" ? "Free" : "Tentative") : null;
                                 return (
-                                  <div key={ri} style={{ position: "absolute", top: run.start * 28 + 1, left: 2, right: 2, height: run.len * 28 - 2, background: bg, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 1 }}>
+                                  <div key={ri} style={{ position: "absolute", top: run.start * 28 + 1, left: 2, right: 2, height: run.len * 28 - 2, background: bg, borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 1 }}>
                                     {label && <span className="mono" style={{ fontSize: 9, color: "var(--on-accent)" }}>{label}</span>}
                                   </div>
                                 );
@@ -1296,64 +1642,61 @@ export default function SyncApp() {
                 ) : (
                   <section className="grid grid-cols-1 gap-3">
                     {months.map(({ year, month }) => (
-                      <MonthGrid key={`${year}-${month}`} year={year} month={month} mode={weekMode} personId={weekMode === "person" ? viewingPerson.id : undefined} groupId={weekMode === "group" ? viewingGroup.id : undefined} />
+                      <MonthGrid key={`${year}-${month}`} year={year} month={month} mode={weekMode} personId={weekMode === "person" ? viewingPerson.id : undefined} groupId={weekMode === "group" ? viewingGroup.id : undefined} onPick={(start, end) => { setInspectedKey(start); setInspectedRangeEnd(start === end ? null : end); }} />
                     ))}
                   </section>
                 )}
 
-                {/* Suggestions + propose */}
-                {groups.length > 0 && (
-                  <section className="mt-6 space-y-4">
-                    {groups.map((g) => (
-                      <div key={g.id}>
-                        <h2 className="display text-base mb-2 flex items-center gap-2" style={{ color: "var(--paper)" }}>
-                          <span style={{ color: g.color, fontSize: 14 }}>{g.shape}</span>{g.name}
-                        </h2>
-                        <div className="flex flex-wrap gap-2">
-                          {(upcomingByGroup[g.id] || []).length === 0 ? (
-                            <span className="text-sm" style={{ color: "var(--mist)" }}>No shared free days yet — mark more above, or sync a friend's calendar in Manage people.</span>
-                          ) : (
-                            upcomingByGroup[g.id].map((key, i) => (
-                              <span key={i} className="inline-flex items-center gap-1.5 rounded-full pl-3 pr-1 py-1" style={{ background: hexToRgba(g.color, 0.85) }}>
-                                <span className="mono text-xs" style={{ color: "var(--on-accent)" }}>{niceDateLabel(key)}</span>
-                                <button onClick={() => openInviteModal("group", g.id, key)} className="mono text-xs rounded-full px-2 py-0.5" style={{ background: "var(--ink)", color: g.color }} title="Turn into an invitation">propose</button>
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                )}
-
-                {/* Manual propose form */}
+                {/* Manual plan / event form */}
                 <section ref={proposeFormRef} className="mt-6 rounded-2xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)", scrollMarginTop: 90 }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="display text-base" style={{ color: "var(--paper)" }}>Propose a date manually</p>
-                    {!showProposeForm && (
-                      <button onClick={() => setShowProposeForm(true)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>+ Propose</button>
-                    )}
+                  <div className="sync-toggle-track flex items-center gap-1 mb-4 w-fit rounded-xl p-1" style={{ background: "var(--ink)" }}>
+                    <button onClick={() => setPlanSectionTab("plan")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "plan" ? "var(--marigold)" : "transparent", color: planSectionTab === "plan" ? "var(--on-accent)" : "var(--mist)" }}>Propose a plan</button>
+                    <button onClick={() => setPlanSectionTab("event")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "event" ? "var(--marigold)" : "transparent", color: planSectionTab === "event" ? "var(--on-accent)" : "var(--mist)" }}>Add an event</button>
                   </div>
-                  {showProposeForm && (
-                    <div className="rounded-xl p-4 mb-4" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                      <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <input type="date" value={proposeDate} onChange={(e) => setProposeDate(e.target.value)} className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                        <select value={proposeGroupId} onChange={(e) => setProposeGroupId(e.target.value)} className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
+
+                  {planSectionTab === "plan" ? (
+                    <div className="rounded-xl p-4 mb-3" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
+                      <input value={proposeTitle} onChange={(e) => setProposeTitle(e.target.value)} placeholder="Name this invitation" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="date" value={proposeDate} onChange={(e) => { setProposeDate(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        <select value={proposeGroupId} onChange={(e) => { setProposeGroupId(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
                           <option value="">Choose a group</option>
                           {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
                         </select>
-                        <input value={proposeCity} onChange={(e) => setProposeCity(e.target.value)} placeholder="City (optional)" className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 140 }} />
-                        <select value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} className="text-sm rounded-full px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 130 }}>
+                        <select value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
                           <option value="">Time (optional)</option>
                           {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
                         </select>
                       </div>
-                      <input value={proposeTitle} onChange={(e) => setProposeTitle(e.target.value)} placeholder="Name this invitation" className="text-sm rounded-lg px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                      <textarea value={proposeMessage} onChange={(e) => setProposeMessage(e.target.value)} placeholder="Message (optional)" rows={3} className="text-sm rounded-lg px-4 py-2 outline-none w-full mb-3 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { createProposal("group", proposeGroupId, proposeDate, proposeTitle, proposeMessage, proposeCity, null, proposeTime); setShowProposeForm(false); setProposeDate(""); setProposeGroupId(""); setProposeCity(""); setProposeTitle(""); setProposeMessage(""); setProposeTime(""); }} className="text-sm rounded-full px-4 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Create</button>
-                        <button onClick={() => setShowProposeForm(false)} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                      <button onClick={() => setShowPlanMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showPlanMoreDetails ? "hide more details" : "more details (location, message)"}</button>
+                      {showPlanMoreDetails && (
+                        <>
+                          <input value={proposeCity} onChange={(e) => setProposeCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <textarea value={proposeMessage} onChange={(e) => setProposeMessage(e.target.value)} placeholder="Message (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        </>
+                      )}
+                      {proposeError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{proposeError}</p>}
+                      <button onClick={submitPlanForm} className="text-sm rounded-xl px-4 py-2 display mt-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Create</button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl p-4 mb-3" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
+                      <input value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="Event name" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="date" value={eventDate} onChange={(e) => { setEventDate(e.target.value); setEventError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        <select value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
+                          <option value="">Time (optional)</option>
+                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                        </select>
                       </div>
+                      <button onClick={() => setShowEventMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showEventMoreDetails ? "hide more details" : "more details (location, notes)"}</button>
+                      {showEventMoreDetails && (
+                        <>
+                          <input value={eventCity} onChange={(e) => setEventCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <textarea value={eventMessage} onChange={(e) => setEventMessage(e.target.value)} placeholder="Notes (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        </>
+                      )}
+                      {eventError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{eventError}</p>}
+                      <button onClick={submitEventForm} className="text-sm rounded-xl px-4 py-2 display mt-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add event</button>
                     </div>
                   )}
                   <p className="text-sm" style={{ color: "var(--mist)" }}>Your full list of plans lives on the Plans tab.</p>
@@ -1363,16 +1706,16 @@ export default function SyncApp() {
             })()}
 
             {tab === "plans" && (
-              <main className="px-5 pb-28">
+              <main className="px-5 pb-28 sync-tabpanel">
                 <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>View details, RSVP, edit, or invite more people here — chat about a plan on Messages.</p>
 
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-                  <div className="flex items-center gap-1 w-fit rounded-full p-1" style={{ background: "var(--ink-2)" }}>
-                    <button onClick={() => setPlansFilter("upcoming")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: plansFilter === "upcoming" ? "var(--marigold)" : "transparent", color: plansFilter === "upcoming" ? "var(--on-accent)" : "var(--mist)" }}>Upcoming</button>
-                    <button onClick={() => setPlansFilter("past")} className="sync-toggle-btn text-sm rounded-full px-4 py-1.5" style={{ background: plansFilter === "past" ? "var(--marigold)" : "transparent", color: plansFilter === "past" ? "var(--on-accent)" : "var(--mist)" }}>Past</button>
+                  <div className="sync-toggle-track flex items-center gap-1 w-fit rounded-xl p-1" style={{ background: "var(--ink-2)" }}>
+                    <button onClick={() => setPlansFilter("upcoming")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: plansFilter === "upcoming" ? "var(--marigold)" : "transparent", color: plansFilter === "upcoming" ? "var(--on-accent)" : "var(--mist)" }}>Upcoming</button>
+                    <button onClick={() => setPlansFilter("past")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: plansFilter === "past" ? "var(--marigold)" : "transparent", color: plansFilter === "past" ? "var(--on-accent)" : "var(--mist)" }}>Past</button>
                   </div>
                   {plansFilter === "past" && (
-                    <input value={pastPlansSearch} onChange={(e) => setPastPlansSearch(e.target.value)} placeholder="Search past plans..." className="text-sm rounded-full px-4 py-1.5 outline-none w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                    <input value={pastPlansSearch} onChange={(e) => setPastPlansSearch(e.target.value)} placeholder="Search past plans..." className="text-sm rounded-xl px-4 py-1.5 outline-none w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                   )}
                 </div>
 
@@ -1390,13 +1733,13 @@ export default function SyncApp() {
                   if (visible.length === 0) {
                     return (
                       <p className="text-sm" style={{ color: "var(--mist)" }}>
-                        {plansFilter === "past" ? "No past plans yet." : "No upcoming plans. Head to the Calendar tab, tap a date, and invite a group or person to create one."}
+                        {plansFilter === "past" ? "No past plans yet." : "No upcoming plans. Head to the Calendar tab, tap a date, and add an event or invite a group."}
                       </p>
                     );
                   }
                   return (
                     <div className="space-y-5">
-                      {visible.map((p) => {
+                      {visible.map((p, idx) => {
                         const target = proposalTarget(p);
                         if (!target) return null;
                         const participants = proposalParticipants(p);
@@ -1412,8 +1755,20 @@ export default function SyncApp() {
                         const fromPerson = peopleById[p.fromId] || you;
                         const isEditing = editingProposalId === p.id;
                         const invitable = people.filter((per) => per.id !== "you" && !participants.includes(per.id));
+                        const yesCount = participants.filter((id) => p.rsvps[id] === "yes").length;
+                        const status = target.isEvent
+                          ? { label: "Event", bg: "var(--punch)", color: "var(--on-accent)" }
+                          : isPast
+                          ? { label: youAttended ? "You went" : "Past", bg: "var(--ink-3)", color: "var(--mist)" }
+                          : confirmed
+                          ? { label: "✓ Confirmed", bg: "var(--mint)", color: "var(--on-accent)" }
+                          : participants.some((id) => p.rsvps[id])
+                          ? { label: "Awaiting responses", bg: "var(--sun)", color: "var(--on-accent)" }
+                          : { label: "Proposed", bg: "var(--sky)", color: "var(--on-accent)" };
+                        const responsesOpen = expandedResponsesId === p.id;
+                        const actionsOpen = moreActionsForId === p.id;
                         return (
-                          <div key={p.id} className="rounded-2xl p-4" style={{ background: "var(--ink-2)", border: `1px solid ${confirmed ? "var(--mint)" : "var(--ink-3)"}`, opacity: isPast ? 0.85 : 1 }}>
+                          <div key={p.id} className="sync-stagger-in rounded-2xl p-4" style={{ "--i": idx, background: "var(--ink-2)", border: `1px solid ${confirmed ? "var(--mint)" : "var(--ink-3)"}`, opacity: isPast ? 0.85 : 1 }}>
                             <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                               <div className="flex items-center gap-2">
                                 {target.isPerson ? (
@@ -1423,24 +1778,18 @@ export default function SyncApp() {
                                 )}
                                 <div>
                                   {isEditing ? (
-                                    <input value={editDraft.title} onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))} className="text-sm rounded-lg px-2 py-1 outline-none mb-1" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                                    <input value={editDraft.title} onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))} className="text-sm rounded-xl px-2 py-1 outline-none mb-1" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                                   ) : (
                                     <p className="display text-base" style={{ color: "var(--paper)" }}>{p.title}</p>
                                   )}
                                   <p className="mono text-xs flex items-center gap-1.5 flex-wrap" style={{ color: "var(--mist)" }}>
                                     <span>{target.name} · {rangeLabel(p.dateKey, p.endDateKey || p.dateKey)}{p.time ? ` · ${p.time} (${fromPerson.name}'s time)` : ""}{p.city && !isEditing ? ` · ${p.city}` : ""}</span>
-                                    {p.seriesLabel && <span className="rounded-full px-2 py-0.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{p.seriesLabel}</span>}
+                                    {p.seriesLabel && <span className="rounded-xl px-2 py-0.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{p.seriesLabel}</span>}
                                   </p>
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                {isPast ? (
-                                  <span className="mono text-xs rounded-full px-3 py-1" style={{ background: "var(--ink-3)", color: "var(--mist)" }}>{youAttended ? "you were there" : "you didn't attend"}</span>
-                                ) : confirmed ? (
-                                  <span className="mono text-xs rounded-full px-3 py-1" style={{ background: "var(--mint)", color: "var(--on-accent)" }}>✓ Locked in</span>
-                                ) : (
-                                  <span className="mono text-xs" style={{ color: "var(--mist)" }}>{participants.filter((id) => p.rsvps[id] === "yes").length}/{participants.length} confirmed</span>
-                                )}
+                                <span className="mono text-xs rounded-xl px-3 py-1" style={{ background: status.bg, color: status.color }}>{status.label}</span>
                                 <button onClick={() => requestDeleteProposal(p.id)} className="text-xs" style={{ color: "var(--mist)" }}>✕</button>
                               </div>
                             </div>
@@ -1448,40 +1797,52 @@ export default function SyncApp() {
                             {/* Opening invite message */}
                             {isEditing ? (
                               <div className="rounded-xl px-4 py-3 mb-3" style={{ background: "var(--ink)", border: `1px solid ${fromPerson.color}55` }}>
-                                <textarea value={editDraft.message} onChange={(e) => setEditDraft((d) => ({ ...d, message: e.target.value }))} rows={3} className="text-sm rounded-lg px-2 py-1 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                                <input value={editDraft.city} onChange={(e) => setEditDraft((d) => ({ ...d, city: e.target.value }))} placeholder="Location (optional)" className="text-sm rounded-lg px-2 py-1 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                                <input value={editDraft.time} onChange={(e) => setEditDraft((d) => ({ ...d, time: e.target.value }))} placeholder="Time (optional)" className="text-sm rounded-lg px-2 py-1 outline-none w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                                <textarea value={editDraft.message} onChange={(e) => setEditDraft((d) => ({ ...d, message: e.target.value }))} rows={3} className="text-sm rounded-xl px-2 py-1 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                                <input value={editDraft.city} onChange={(e) => setEditDraft((d) => ({ ...d, city: e.target.value }))} placeholder="Location (optional)" className="text-sm rounded-xl px-2 py-1 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                                <input value={editDraft.time} onChange={(e) => setEditDraft((d) => ({ ...d, time: e.target.value }))} placeholder="Time (optional)" className="text-sm rounded-xl px-2 py-1 outline-none w-full" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                               </div>
                             ) : (
-                              <div className="rounded-xl px-4 py-3 mb-3" style={{ background: "var(--ink)", border: `1px solid ${fromPerson.color}55` }}>
-                                <p className="text-xs mono mb-1" style={{ color: fromPerson.color }}>{fromPerson.name} invited {target.isPerson ? "you" : "the group"}</p>
-                                <p className="text-sm" style={{ color: "var(--paper)" }}>{p.message || "(no message)"}</p>
+                              <div className="rounded-xl px-3 py-2 mb-3" style={{ background: "var(--ink)" }}>
+                                {!target.isEvent && <span className="text-xs mono mr-1" style={{ color: fromPerson.color }}>{fromPerson.name}:</span>}
+                                <span className="text-xs" style={{ color: "var(--mist)" }}>{p.message || (target.isEvent ? "No notes." : "(no message)")}</span>
                               </div>
                             )}
 
-                            {/* Participants, free first then tentative then not-free */}
-                            <div className="flex flex-wrap gap-2 mb-3">
-                              {sortedParticipants.map((pid) => {
-                                const person = peopleById[pid];
-                                const status = p.rsvps[pid];
-                                const dot = status === "yes" ? "var(--mint)" : status === "maybe" ? "var(--sun)" : status === "no" ? "var(--ember)" : "var(--ink-3)";
-                                const tzDiff = person.tz - fromPerson.tz;
-                                return (
-                                  <span key={pid} className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 py-1" style={{ border: `1px solid ${dot}` }}>
-                                    <Avatar person={person} size={16} />
-                                    <span className="text-xs" style={{ color: "var(--paper)" }}>{person.name}</span>
-                                    {p.time && tzDiff !== 0 && <span className="mono text-xs" style={{ color: "var(--mist)" }}>{tzDiff > 0 ? "+" : ""}{tzDiff}h</span>}
-                                    <span className="mono text-xs" style={{ color: dot }}>{status || "no response"}</span>
-                                  </span>
-                                );
-                              })}
+                            {/* Participants — stacked avatars + confirmed count by default, full per-person responses behind a toggle */}
+                            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                              <div className="flex items-center -space-x-1.5">
+                                {sortedParticipants.slice(0, 6).map((pid) => (<Avatar key={pid} person={peopleById[pid]} size={22} ring="var(--ink-2)" />))}
+                              </div>
+                              {!target.isEvent && (
+                                <button onClick={() => setExpandedResponsesId(responsesOpen ? null : p.id)} className="text-xs mono rounded-xl px-2 py-1" style={{ color: "var(--mist)" }}>
+                                  {yesCount}/{participants.length} confirmed · {responsesOpen ? "hide" : "show"} responses
+                                </button>
+                              )}
                             </div>
+                            {responsesOpen && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {sortedParticipants.map((pid) => {
+                                  const person = peopleById[pid];
+                                  const rsvpStatus = p.rsvps[pid];
+                                  const dot = rsvpStatus === "yes" ? "var(--mint)" : rsvpStatus === "maybe" ? "var(--sun)" : rsvpStatus === "no" ? "var(--ember)" : "var(--ink-3)";
+                                  const tzDiff = person.tz - fromPerson.tz;
+                                  return (
+                                    <span key={pid} className="inline-flex items-center gap-1.5 rounded-xl pl-1 pr-3 py-1" style={{ border: `1px solid ${dot}` }}>
+                                      <Avatar person={person} size={16} />
+                                      <span className="text-xs" style={{ color: "var(--paper)" }}>{person.name}</span>
+                                      {p.time && tzDiff !== 0 && <span className="mono text-xs" style={{ color: "var(--mist)" }}>{tzDiff > 0 ? "+" : ""}{tzDiff}h</span>}
+                                      <span className="mono text-xs" style={{ color: dot }}>{rsvpStatus || "no response"}</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
 
-                            {!isPast && (
+                            {!isPast && p.kind !== "event" && (
                               <div className="flex items-center gap-2 mb-3 flex-wrap">
                                 <span className="text-xs mono" style={{ color: "var(--mist)" }}>Responding as {editingAsPerson.name}:</span>
                                 {["yes", "maybe", "no"].map((s) => (
-                                  <button key={s} onClick={() => setRsvp(p.id, editingAsId, s)} className="text-xs rounded-full px-3 py-1" style={{ background: p.rsvps[editingAsId] === s ? "var(--marigold)" : "var(--ink)", color: p.rsvps[editingAsId] === s ? "var(--on-accent)" : "var(--mist)", border: "1px solid var(--ink-3)" }}>
+                                  <button key={s} onClick={() => setRsvp(p.id, editingAsId, s)} className="text-xs rounded-xl px-3 py-1" style={{ background: p.rsvps[editingAsId] === s ? "var(--marigold)" : "var(--ink)", color: p.rsvps[editingAsId] === s ? "var(--on-accent)" : "var(--mist)", border: "1px solid var(--ink-3)" }}>
                                     {s === "yes" ? "I'm in" : s === "maybe" ? "Maybe" : "Can't make it"}
                                   </button>
                                 ))}
@@ -1495,7 +1856,7 @@ export default function SyncApp() {
                                   {invitable.length === 0 ? (
                                     <span className="text-sm" style={{ color: "var(--mist)" }}>Everyone you know is already on this plan.</span>
                                   ) : invitable.map((per) => (
-                                    <button key={per.id} onClick={() => addInviteeToProposal(p.id, per.id)} className="text-sm rounded-full px-3 py-1.5 flex items-center gap-2" style={{ border: `1px solid ${per.color}`, color: "var(--paper)" }}>
+                                    <button key={per.id} onClick={() => addInviteeToProposal(p.id, per.id)} className="text-sm rounded-xl px-3 py-1.5 flex items-center gap-2" style={{ border: `1px solid ${per.color}`, color: "var(--paper)" }}>
                                       <Avatar person={per} size={16} />
                                       {per.name}
                                     </button>
@@ -1507,18 +1868,21 @@ export default function SyncApp() {
                             <div className="flex items-center gap-2 flex-wrap">
                               {isEditing ? (
                                 <>
-                                  <button onClick={saveEditProposal} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Save</button>
-                                  <button onClick={() => setEditingProposalId(null)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Cancel</button>
+                                  <button onClick={saveEditProposal} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Save</button>
+                                  <button onClick={() => setEditingProposalId(null)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Cancel</button>
                                 </>
                               ) : (
-                                <>
-                                  {!isPast && <button onClick={() => startEditProposal(p)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Edit plan</button>}
-                                  {!isPast && <button onClick={() => setInviteMoreForId(inviteMoreForId === p.id ? null : p.id)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{inviteMoreForId === p.id ? "Close" : "+ Invite more"}</button>}
-                                  <button onClick={() => downloadICS(p, target.name)} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Add to calendar (.ics)</button>
-                                  <button onClick={() => setTab("messages")} className="text-xs rounded-full px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Open conversation →</button>
-                                </>
+                                <button onClick={() => setMoreActionsForId(actionsOpen ? null : p.id)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{actionsOpen ? "Hide actions" : "⋯ More"}</button>
                               )}
                             </div>
+                            {!isEditing && actionsOpen && (
+                              <div className="flex items-center gap-2 flex-wrap mt-2">
+                                {!isPast && <button onClick={() => startEditProposal(p)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Edit plan</button>}
+                                {!isPast && <button onClick={() => setInviteMoreForId(inviteMoreForId === p.id ? null : p.id)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{inviteMoreForId === p.id ? "Close" : "+ Invite more"}</button>}
+                                <button onClick={() => downloadICS(p, target.name)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Add to calendar (.ics)</button>
+                                {p.kind !== "event" && <button onClick={() => setTab("messages")} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>Open conversation →</button>}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1529,38 +1893,40 @@ export default function SyncApp() {
             )}
 
             {tab === "messages" && (
-              <main className="px-5 pb-28">
-                <section className="rounded-2xl p-4 mb-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
-                  <p className="mono text-xs mb-3" style={{ color: "var(--mist)" }}>tap someone to see their availability & message them</p>
-                  <div className="flex flex-wrap gap-4">
+              <main className="px-5 pb-28 sync-tabpanel">
+                <div className="mb-4">
+                  <p className="mono text-xs mb-2" style={{ color: "var(--mist)" }}>Start a new message</p>
+                  <div className="flex flex-wrap gap-3">
                     {groups.map((g) => (
                       <button key={g.id} onClick={() => openGroupProfile(g.id)} className="sync-icon-btn flex flex-col items-center gap-1" style={{ background: "transparent" }}>
-                        <span className="flex items-center justify-center rounded-full" style={{ width: 40, height: 40, background: hexToRgba(g.color, 0.25), border: `1.5px solid ${g.color}`, color: g.color, fontSize: 16 }}>{g.shape}</span>
+                        <span className="flex items-center justify-center rounded-xl" style={{ width: 30, height: 30, background: hexToRgba(g.color, 0.25), border: `1.5px solid ${g.color}`, color: g.color, fontSize: 13 }}>{g.shape}</span>
                         <span className="text-xs mono" style={{ color: "var(--mist)" }}>{g.name}</span>
                       </button>
                     ))}
                     {people.filter((p) => p.id !== "you").map((p) => (
                       <button key={p.id} onClick={() => openPersonProfile(p.id)} className="sync-icon-btn flex flex-col items-center gap-1" style={{ background: "transparent" }}>
-                        <Avatar person={p} size={40} />
+                        <Avatar person={p} size={30} />
                         <span className="text-xs mono" style={{ color: "var(--mist)" }}>{p.name}</span>
                       </button>
                     ))}
                   </div>
-                </section>
+                </div>
 
                 <p className="text-xs mb-5" style={{ color: "var(--mist)" }}>RSVPs & plan details live on Plans — this is just for chatting.</p>
 
-                {proposals.length === 0 ? (
+                {proposals.filter((p) => p.kind !== "event" || (p.extraInviteeIds || []).length > 0).length === 0 ? (
                   <p className="text-sm" style={{ color: "var(--mist)" }}>No conversations yet. Head to the Calendar tab, tap a date, and invite a group or person to start one.</p>
                 ) : (
                   <div className="space-y-5">
-                    {[...proposals].reverse().map((p) => {
+                    {[...proposals].reverse().filter((p) => p.kind !== "event" || (p.extraInviteeIds || []).length > 0).map((p, idx) => {
                       const target = proposalTarget(p);
                       if (!target) return null;
                       const fromPerson = peopleById[p.fromId] || you;
                       const unread = hasUnreadThread(p);
+                      const lastMsg = p.thread.length ? p.thread[p.thread.length - 1] : null;
+                      const lastSender = lastMsg ? (peopleById[lastMsg.personId] || you) : null;
                       return (
-                        <div key={p.id} className="rounded-2xl p-4" style={{ background: "var(--ink-2)", border: `1px solid ${unread ? "var(--sun)" : "var(--ink-3)"}` }}>
+                        <div key={p.id} className="sync-stagger-in rounded-2xl p-4" style={{ "--i": idx, background: "var(--ink-2)", border: `1px solid ${unread ? "var(--sun)" : "var(--ink-3)"}` }}>
                           <div className="flex items-center justify-between gap-2 mb-3">
                             <div className="flex items-center gap-2">
                               {target.isPerson ? (
@@ -1576,13 +1942,15 @@ export default function SyncApp() {
                                 <p className="mono text-xs" style={{ color: "var(--mist)" }}>{target.name} · {rangeLabel(p.dateKey, p.endDateKey || p.dateKey)}{p.time ? ` · ${p.time} (${fromPerson.name}'s time)` : ""}</p>
                               </div>
                             </div>
-                            {p.seriesLabel && <span className="mono text-xs rounded-full px-2 py-0.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{p.seriesLabel}</span>}
+                            {p.seriesLabel && <span className="mono text-xs rounded-xl px-2 py-0.5" style={{ background: "var(--ink-3)", color: "var(--paper)" }}>{p.seriesLabel}</span>}
                           </div>
 
-                          {/* Opening invite message */}
-                          <div className="rounded-xl px-4 py-3 mb-3" style={{ background: "var(--ink)", border: `1px solid ${fromPerson.color}55` }}>
-                            <p className="text-xs mono mb-1" style={{ color: fromPerson.color }}>{fromPerson.name} invited {target.isPerson ? "you" : "the group"}</p>
-                            <p className="text-sm" style={{ color: "var(--paper)" }}>{p.message || "(no message)"}</p>
+                          {/* Latest-message preview — full thread stays visible below, unchanged */}
+                          <div className="rounded-xl px-3 py-2 mb-3 flex items-center justify-between gap-2">
+                            <span className="text-xs truncate" style={{ color: "var(--mist)" }}>
+                              {lastMsg ? (<><span style={{ color: lastSender.color }}>{lastSender.name}: </span>{lastMsg.text}</>) : (p.message || "No messages yet")}
+                            </span>
+                            {lastMsg?.ts && <span className="mono text-xs flex-shrink-0" style={{ color: "var(--mist)", opacity: 0.6 }}>{timeAgo(lastMsg.ts)}</span>}
                           </div>
 
                           {/* Reply thread */}
@@ -1592,7 +1960,7 @@ export default function SyncApp() {
                                 const sender = peopleById[m.personId] || you;
                                 return (
                                   <div key={m.id} className="rounded-xl px-4 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                                    <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
+                                    <p className="text-xs mono mb-0.5 flex items-center gap-1.5" style={{ color: sender.color }}>{sender.name}{m.ts && <span style={{ color: "var(--mist)", opacity: 0.7 }}>· {timeAgo(m.ts)}</span>}</p>
                                     <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
                                     <MessageReactions message={m} onToggle={(emoji) => toggleThreadReaction(p.id, m.id, emoji)} />
                                   </div>
@@ -1607,13 +1975,13 @@ export default function SyncApp() {
                               onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
                               onKeyDown={(e) => { if (e.key === "Enter") { addReply(p.id, editingAsId, replyDrafts[p.id] || ""); setReplyDrafts((prev) => ({ ...prev, [p.id]: "" })); } }}
                               placeholder={`Reply as ${editingAsPerson.name}...`}
-                              className="text-sm rounded-full px-4 py-2 outline-none flex-1"
+                              className="text-sm rounded-xl px-4 py-2 outline-none flex-1"
                               style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                             />
                             <button
                               onClick={() => { addReply(p.id, editingAsId, replyDrafts[p.id] || ""); setReplyDrafts((prev) => ({ ...prev, [p.id]: "" })); }}
-                              className="text-sm rounded-full px-4 py-2"
-                              style={{ background: "var(--marigold)", color: "var(--on-accent)" }}
+                              className="text-sm rounded-xl px-4 py-2"
+                              style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}
                             >
                               Send
                             </button>
@@ -1629,16 +1997,19 @@ export default function SyncApp() {
             {/* ---- Settings sheet ---- */}
             {showSettings && (
               <div className="absolute inset-0 z-40 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.55)" }} onClick={() => setShowSettings(false)}>
-                <div onClick={(e) => e.stopPropagation()} className="sync-scroll" style={{ maxHeight: "85%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 28, borderTopRightRadius: 28, border: "1px solid var(--ink-4)", padding: "20px 20px 32px", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)" }}>
+                <div onClick={(e) => e.stopPropagation()} className="sync-scroll sync-sheet-in" style={{ maxHeight: "85%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", padding: "20px 20px 32px", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)" }}>
                   <div className="flex items-center justify-between mb-5">
-                    <p className="display text-xl" style={{ color: "var(--paper)" }}>Settings</p>
+                    <div className="flex items-center gap-2.5">
+                      <Saamy size={30} />
+                      <p className="display text-xl" style={{ color: "var(--paper)" }}>Settings</p>
+                    </div>
                     <button onClick={() => setShowSettings(false)} className="text-xs" style={{ color: "var(--mist)" }}>✕ close</button>
                   </div>
 
                   <p className="mono text-xs mb-2" style={{ color: "var(--mist)" }}>appearance</p>
                   <div className="flex items-center gap-2 mb-6">
-                    <button onClick={() => setThemeMode("dark")} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-1 justify-center" style={{ background: themeMode === "dark" ? "var(--ink-3)" : "var(--ink)", color: "var(--paper)" }}><Moon size={15} /> Dark</button>
-                    <button onClick={() => setThemeMode("light")} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm flex-1 justify-center" style={{ background: themeMode === "light" ? "var(--ink-3)" : "var(--ink)", color: "var(--paper)" }}><Sun size={15} /> Light</button>
+                    <button onClick={() => setThemeMode("dark")} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm flex-1 justify-center" style={{ background: themeMode === "dark" ? "var(--marigold)" : "var(--ink)", color: themeMode === "dark" ? "var(--on-accent)" : "var(--paper)" }}><Moon size={15} /> Dark</button>
+                    <button onClick={() => setThemeMode("light")} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm flex-1 justify-center" style={{ background: themeMode === "light" ? "var(--marigold)" : "var(--ink)", color: themeMode === "light" ? "var(--on-accent)" : "var(--paper)" }}><Sun size={15} /> Light</button>
                   </div>
 
                   <div className="mb-6">
@@ -1662,11 +2033,18 @@ export default function SyncApp() {
                   )}
 
                   <button
-                    onClick={() => { setShowOnboarding(true); setSlideIndex(0); setShowSettings(false); }}
-                    className="w-full text-left rounded-lg px-1 py-2 text-sm mt-2"
+                    onClick={() => { setShowOnboarding(true); setShowSettings(false); }}
+                    className="w-full text-left rounded-xl px-1 py-2 text-sm mt-2"
                     style={{ color: "var(--mist)" }}
                   >
                     Replay intro
+                  </button>
+                  <button
+                    onClick={() => { setShowSettings(false); setShowTour(true); }}
+                    className="w-full text-left rounded-xl px-1 py-2 text-sm"
+                    style={{ color: "var(--mist)" }}
+                  >
+                    Replay app tour
                   </button>
                 </div>
               </div>
@@ -1675,19 +2053,19 @@ export default function SyncApp() {
             {/* ---- Import calendar modal ---- */}
             {showImportModal && (
               <div className="absolute inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowImportModal(false)}>
-                <div onClick={(e) => e.stopPropagation()} className="sync-scroll" style={{ maxHeight: "85%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 28, borderTopRightRadius: 28, border: "1px solid var(--ink-4)", padding: 20 }}>
+                <div onClick={(e) => e.stopPropagation()} className="sync-scroll sync-sheet-in" style={{ maxHeight: "85%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", padding: 20 }}>
                   <p className="display text-lg mb-1" style={{ color: "var(--paper)" }}>Import a calendar</p>
                   <p className="text-xs mono mb-4" style={{ color: "var(--mist)" }}>Export a calendar as .ics from Google, Apple, or Outlook, then upload or paste it below — its events will show up alongside your plans.</p>
-                  <input value={importName} onChange={(e) => setImportName(e.target.value)} placeholder="Name this calendar (e.g. Work)" className="text-sm rounded-lg px-3 py-2 outline-none w-full mb-3" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                  <label className="text-xs rounded-full px-3 py-1.5 inline-flex items-center gap-1.5 mb-3" style={{ background: "var(--ink-3)", color: "var(--paper)", cursor: "pointer" }}>
+                  <input value={importName} onChange={(e) => setImportName(e.target.value)} placeholder="Name this calendar (e.g. Work)" className="text-sm rounded-xl px-3 py-2 outline-none w-full mb-3" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                  <label className="text-xs rounded-xl px-3 py-1.5 inline-flex items-center gap-1.5 mb-3" style={{ background: "var(--ink-3)", color: "var(--paper)", cursor: "pointer" }}>
                     Upload .ics file
                     <input type="file" accept=".ics,text/calendar" onChange={handleImportFile} className="hidden" />
                   </label>
-                  <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="...or paste the .ics file contents here" rows={6} className="text-xs mono rounded-lg px-3 py-2 outline-none w-full mb-3 resize-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                  <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="...or paste the .ics file contents here" rows={6} className="text-xs mono rounded-xl px-3 py-2 outline-none w-full mb-3 resize-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
                   {importError && <p className="text-xs mb-3" style={{ color: "var(--ember)" }}>{importError}</p>}
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => { setShowImportModal(false); setImportError(""); }} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
-                    <button onClick={importCalendar} className="text-sm rounded-full px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Import</button>
+                    <button onClick={() => { setShowImportModal(false); setImportError(""); }} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                    <button onClick={importCalendar} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Import</button>
                   </div>
                 </div>
               </div>
@@ -1702,13 +2080,47 @@ export default function SyncApp() {
                   background: "var(--ink-2)", border: "1px solid var(--ink-4)",
                   boxShadow: "0 20px 45px rgba(0,0,0,0.5)",
                 }}
-                className="rounded-2xl p-4 sync-scroll"
+                className="rounded-2xl p-4 sync-scroll sync-fade-in"
               >
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
                   <p className="display text-base" style={{ color: "var(--paper)" }}>{rangeLabel(inspectedKey, inspectedRangeEnd || inspectedKey)}</p>
                   <button onClick={() => { setInspectedKey(null); setInspectedRangeEnd(null); }} className="text-xs" style={{ color: "var(--mist)" }}>✕ close</button>
                 </div>
 
+                {(() => {
+                  const dayPlans = eventsOnDay(inspectedKey);
+                  if (dayPlans.length === 0) return null;
+                  return (
+                    <>
+                      <p className="eyebrow mb-2">planned for this day</p>
+                      <div className="space-y-2 mb-4">
+                        {dayPlans.map((p) => {
+                          const target = proposalTarget(p);
+                          if (!target) return null;
+                          const participants = proposalParticipants(p);
+                          const confirmed = proposalConfirmed(p);
+                          return (
+                            <div key={p.id} onClick={() => setTab("plans")} className="sync-card rounded-xl p-2.5 cursor-pointer flex items-center justify-between gap-2" style={{ background: "var(--ink)", border: `1px solid ${confirmed ? "var(--mint)" : "var(--ink-3)"}` }}>
+                              <div>
+                                <p className="text-sm" style={{ color: "var(--paper)" }}>{p.title}</p>
+                                <p className="mono text-xs" style={{ color: "var(--mist)" }}>{p.time || "All day"}</p>
+                              </div>
+                              <div className="flex items-center -space-x-1.5">
+                                {participants.slice(0, 5).map((pid) => {
+                                  const person = peopleById[pid];
+                                  if (!person) return null;
+                                  return <Avatar key={pid} person={person} size={20} ring="var(--ink)" />;
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                <p className="eyebrow mb-2">who's free</p>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {[...people].sort((a, b) => {
                     const order = { free: 0, tentative: 1 };
@@ -1719,7 +2131,7 @@ export default function SyncApp() {
                     const status = getStatus(p.id, inspectedKey);
                     const label = status === "free" ? "free" : status === "tentative" ? "tentative" : "not marked";
                     return (
-                      <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 py-1" style={{ border: `1px solid ${p.color}` }}>
+                      <span key={p.id} className="inline-flex items-center gap-1.5 rounded-xl pl-1 pr-3 py-1" style={{ border: `1px solid ${p.color}` }}>
                         <Avatar person={p} size={18} />
                         <span className="text-xs" style={{ color: "var(--paper)" }}>{p.name}</span>
                         <span className="mono text-xs" style={{ color: p.color, opacity: 0.85 }}>{label}</span>
@@ -1742,7 +2154,7 @@ export default function SyncApp() {
                         key={g.id}
                         disabled={already}
                         onClick={() => openInviteModal("group", g.id, inspectedKey, inspectedRangeEnd)}
-                        className="text-sm rounded-full px-4 py-1.5 flex items-center gap-2"
+                        className="text-sm rounded-xl px-4 py-1.5 flex items-center gap-2"
                         style={{
                           background: already ? "var(--ink-3)" : fullMatch ? g.color : "transparent",
                           color: already ? "var(--mist)" : fullMatch ? "var(--on-accent)" : "var(--paper)",
@@ -1772,7 +2184,7 @@ export default function SyncApp() {
                         key={p.id}
                         disabled={already}
                         onClick={() => openInviteModal("person", p.id, inspectedKey, inspectedRangeEnd)}
-                        className="text-sm rounded-full pl-1 pr-3 py-1 flex items-center gap-2"
+                        className="text-sm rounded-xl pl-1 pr-3 py-1 flex items-center gap-2"
                         style={{
                           background: already ? "var(--ink-3)" : status === "free" ? p.color : "transparent",
                           color: already ? "var(--mist)" : status === "free" ? "var(--on-accent)" : "var(--paper)",
@@ -1792,12 +2204,12 @@ export default function SyncApp() {
 
             {confirmDeleteId && (
               <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)" }} className="flex items-center justify-center p-4" onClick={() => setConfirmDeleteId(null)}>
-                <div onClick={(e) => e.stopPropagation()} className="rounded-2xl p-6 w-full" style={{ maxWidth: 340, background: "var(--ink-2)", border: "1px solid var(--ink-4)", boxShadow: "0 25px 60px rgba(0,0,0,0.6)" }}>
+                <div onClick={(e) => e.stopPropagation()} className="rounded-2xl p-6 w-full sync-dialog-in" style={{ maxWidth: 340, background: "var(--ink-2)", border: "1px solid var(--ink-4)", boxShadow: "0 25px 60px rgba(0,0,0,0.6)" }}>
                   <p className="display text-lg mb-2" style={{ color: "var(--paper)" }}>Delete this plan?</p>
                   <p className="text-sm mb-5" style={{ color: "var(--mist)" }}>This removes it for everyone and can't be undone.</p>
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => setConfirmDeleteId(null)} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
-                    <button onClick={confirmDeleteProposal} className="text-sm rounded-full px-5 py-2 display" style={{ background: "var(--ember)", color: "var(--paper)" }}>Delete</button>
+                    <button onClick={() => setConfirmDeleteId(null)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                    <button onClick={confirmDeleteProposal} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--ember)", color: "var(--paper)" }}>Delete</button>
                   </div>
                 </div>
               </div>
@@ -1805,7 +2217,7 @@ export default function SyncApp() {
 
             {inviteModal && (
               <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)" }} className="flex flex-col justify-end" onClick={() => setInviteModal(null)}>
-                <div onClick={(e) => e.stopPropagation()} className="sync-scroll" style={{ maxHeight: "88%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 28, borderTopRightRadius: 28, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
+                <div onClick={(e) => e.stopPropagation()} className="sync-scroll sync-sheet-in" style={{ maxHeight: "88%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
                   <p className="display text-xl mb-1" style={{ color: "var(--paper)" }}>New invitation</p>
                   <p className="text-xs mono mb-4" style={{ color: "var(--mist)" }}>
                     {inviteModal.kind === "group" ? groups.find((g) => g.id === inviteModal.targetId)?.name : peopleById[inviteModal.targetId]?.name} · {rangeLabel(inviteModal.dateKey, inviteModal.endDateKey || inviteModal.dateKey)}
@@ -1814,7 +2226,7 @@ export default function SyncApp() {
                   <input
                     value={inviteTitle}
                     onChange={(e) => setInviteTitle(e.target.value)}
-                    className="text-sm rounded-lg px-3 py-2 outline-none w-full mb-4"
+                    className="text-sm rounded-xl px-3 py-2 outline-none w-full mb-4"
                     style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                   />
                   <label className="text-xs mono mb-1 block" style={{ color: "var(--mist)" }}>Message (optional)</label>
@@ -1823,7 +2235,7 @@ export default function SyncApp() {
                     onChange={(e) => setInviteMessage(e.target.value)}
                     placeholder="e.g. Thinking we do a long weekend — anyone able to fly in?"
                     rows={4}
-                    className="text-sm rounded-lg px-3 py-2 outline-none w-full mb-4 resize-none"
+                    className="text-sm rounded-xl px-3 py-2 outline-none w-full mb-4 resize-none"
                     style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                   />
                   <label className="text-xs mono mb-1 block" style={{ color: "var(--mist)" }}>Location (optional)</label>
@@ -1831,7 +2243,7 @@ export default function SyncApp() {
                     value={inviteLocation}
                     onChange={(e) => setInviteLocation(e.target.value)}
                     placeholder="e.g. Denver, CO or a specific address"
-                    className="text-sm rounded-lg px-3 py-2 outline-none w-full mb-4"
+                    className="text-sm rounded-xl px-3 py-2 outline-none w-full mb-4"
                     style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                   />
                   <div className="flex gap-3 mb-4">
@@ -1841,13 +2253,13 @@ export default function SyncApp() {
                         value={inviteTime}
                         onChange={(e) => setInviteTime(e.target.value)}
                         placeholder={`e.g. 7:00 PM ${tzLabelFor(you.tz)}`}
-                        className="text-sm rounded-lg px-3 py-2 outline-none w-full"
+                        className="text-sm rounded-xl px-3 py-2 outline-none w-full"
                         style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                       />
                     </div>
                     <div className="flex-1">
                       <label className="text-xs mono mb-1 block" style={{ color: "var(--mist)" }}>Repeats</label>
-                      <select value={inviteRepeat} onChange={(e) => setInviteRepeat(e.target.value)} className="text-sm rounded-lg px-3 py-2 outline-none w-full" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
+                      <select value={inviteRepeat} onChange={(e) => setInviteRepeat(e.target.value)} className="text-sm rounded-xl px-3 py-2 outline-none w-full" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
                         <option value="none">Doesn't repeat</option>
                         <option value="weekly">Weekly (4x)</option>
                         <option value="monthly">Monthly (4x)</option>
@@ -1863,8 +2275,8 @@ export default function SyncApp() {
                     This demo delivers the invite inside the app only — a real version would also be able to text this to people directly.
                   </p>
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => setInviteModal(null)} className="text-sm rounded-full px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
-                    <button onClick={sendInvite} className="text-sm rounded-full px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Send</button>
+                    <button onClick={() => setInviteModal(null)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                    <button onClick={sendInvite} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Send</button>
                   </div>
                 </div>
               </div>
@@ -1887,7 +2299,7 @@ export default function SyncApp() {
               };
               return (
                 <div style={{ position: "absolute", inset: 0, zIndex: 55, background: "rgba(0,0,0,0.55)" }} className="flex items-end" onClick={() => setInspectingEntity(null)}>
-                  <div onClick={(e) => e.stopPropagation()} className="sync-scroll w-full" style={{ maxHeight: "90%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 28, borderTopRightRadius: 28, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
+                  <div onClick={(e) => e.stopPropagation()} className="sync-scroll w-full sync-sheet-in" style={{ maxHeight: "90%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
                     {p.background && (
                       <div className="rounded-2xl mb-3" style={{ height: 64, marginTop: -4, background: p.background, backgroundSize: "cover", backgroundPosition: "center" }} />
                     )}
@@ -1907,25 +2319,25 @@ export default function SyncApp() {
                     </button>
                     {showCustomize && (
                       <div className="rounded-xl p-3 mb-4" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>color</p>
+                        <p className="eyebrow mb-2">color</p>
                         <div className="flex flex-wrap gap-2 mb-4">
                           {COLOR_PALETTE.map((c) => (
-                            <span key={c.hex} onClick={() => updatePerson(p.id, { color: c.hex })} className="sync-swatch inline-block rounded-full" style={{ width: 22, height: 22, background: c.hex, boxShadow: p.color === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />
+                            <button key={c.hex} onClick={() => updatePerson(p.id, { color: c.hex })} aria-label={`Set color to ${c.name}`} className="sync-swatch inline-block rounded-xl" style={{ width: 22, height: 22, background: c.hex, boxShadow: p.color === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />
                           ))}
                         </div>
-                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>avatar</p>
+                        <p className="eyebrow mb-2">avatar</p>
                         <div className="mb-4">
                           <AvatarPicker person={p} onChange={(patch) => updatePerson(p.id, patch)} />
                         </div>
                         <div className="mb-4">
                           <BackgroundPicker value={p.background} onChange={(bg) => updatePerson(p.id, { background: bg })} label="profile background" />
                         </div>
-                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>birthday</p>
+                        <p className="eyebrow mb-2">birthday</p>
                         <input
                           type="date"
                           value={p.birthday ? `2000-${p.birthday}` : ""}
                           onChange={(e) => updatePerson(p.id, { birthday: e.target.value ? e.target.value.slice(5) : null })}
-                          className="text-sm rounded-lg px-3 py-2 outline-none"
+                          className="text-sm rounded-xl px-3 py-2 outline-none"
                           style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", colorScheme: "dark" }}
                         />
                         <p className="text-xs mono mt-1" style={{ color: "var(--mist)", opacity: 0.7 }}>year doesn't matter — shows a 🎂 on My Calendar every year</p>
@@ -1935,7 +2347,7 @@ export default function SyncApp() {
                     {memberOfGroups.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-4">
                         {memberOfGroups.map((g) => (
-                          <span key={g.id} className="inline-flex items-center gap-1.5 rounded-full pl-2 pr-3 py-1" style={{ border: `1px solid ${g.color}` }}>
+                          <span key={g.id} className="inline-flex items-center gap-1.5 rounded-xl pl-2 pr-3 py-1" style={{ border: `1px solid ${g.color}` }}>
                             <span className="inline-block rounded-full" style={{ width: 8, height: 8, background: g.color }} />
                             <span className="text-xs" style={{ color: "var(--paper)" }}>{g.name}</span>
                           </span>
@@ -1946,12 +2358,12 @@ export default function SyncApp() {
                     <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>free in the next 30 days — tap a date to invite</p>
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {freeRanges.length === 0 && tentRanges.length === 0 && <span className="text-sm" style={{ color: "var(--mist)" }}>Nothing marked yet this month.</span>}
-                      {freeRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-full px-2.5 py-1" style={{ background: p.color, color: "var(--on-accent)" }}>{rangeLabel(s, e)}</button>))}
-                      {tentRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-full px-2.5 py-1" style={{ border: `1px solid ${p.color}`, color: p.color }}>{rangeLabel(s, e)} ?</button>))}
+                      {freeRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-xl px-2.5 py-1" style={{ background: p.color, color: "var(--on-accent)" }}>{rangeLabel(s, e)}</button>))}
+                      {tentRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-xl px-2.5 py-1" style={{ border: `1px solid ${p.color}`, color: p.color }}>{rangeLabel(s, e)} ?</button>))}
                     </div>
 
                     <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>full calendar — scroll for the rest of the year, tap any date to invite</p>
-                    <div className="sync-scroll grid grid-cols-2 gap-2 mb-5 p-1" style={{ maxHeight: 300, overflowY: "auto", background: "var(--ink)", borderRadius: 12 }}>
+                    <div className="sync-scroll grid grid-cols-2 gap-2 mb-5 p-1" style={{ maxHeight: 300, overflowY: "auto", background: "var(--ink)", borderRadius: 7 }}>
                       {months.map(({ year, month }) => (<MonthGrid key={`${year}-${month}`} year={year} month={month} mode="person" personId={p.id} compact onPick={pickDate} />))}
                     </div>
 
@@ -1966,7 +2378,7 @@ export default function SyncApp() {
                               const sender = peopleById[m.fromId] || you;
                               return (
                                 <div key={m.id} className="rounded-xl px-3 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                                  <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
+                                  <p className="text-xs mono mb-0.5 flex items-center gap-1.5" style={{ color: sender.color }}>{sender.name}{m.ts && <span style={{ color: "var(--mist)", opacity: 0.7 }}>· {timeAgo(m.ts)}</span>}</p>
                                   <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
                                   <MessageReactions message={m} onToggle={(emoji) => toggleDmReaction(dmKey(editingAsId, p.id), m.id, emoji)} />
                                 </div>
@@ -1980,10 +2392,10 @@ export default function SyncApp() {
                             onChange={(e) => setDmDraft(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") { sendDM(p.id, dmDraft); setDmDraft(""); } }}
                             placeholder={`Message as ${editingAsPerson.name}...`}
-                            className="text-sm rounded-full px-4 py-2 outline-none flex-1"
+                            className="text-sm rounded-xl px-4 py-2 outline-none flex-1"
                             style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                           />
-                          <button onClick={() => { sendDM(p.id, dmDraft); setDmDraft(""); }} className="text-sm rounded-full px-4 py-2" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Send</button>
+                          <button onClick={() => { sendDM(p.id, dmDraft); setDmDraft(""); }} className="text-sm rounded-xl px-4 py-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Send</button>
                         </div>
                         <p className="text-xs mono mt-3" style={{ color: "var(--mist)", opacity: 0.8 }}>This demo delivers messages inside the app only — a real version would be able to reach {p.name} by text too.</p>
                       </>
@@ -2007,10 +2419,10 @@ export default function SyncApp() {
               };
               return (
                 <div style={{ position: "absolute", inset: 0, zIndex: 55, background: "rgba(0,0,0,0.55)" }} className="flex items-end" onClick={() => setInspectingEntity(null)}>
-                  <div onClick={(e) => e.stopPropagation()} className="sync-scroll w-full" style={{ maxHeight: "90%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 28, borderTopRightRadius: 28, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
+                  <div onClick={(e) => e.stopPropagation()} className="sync-scroll w-full sync-sheet-in" style={{ maxHeight: "90%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center rounded-full" style={{ width: 40, height: 40, background: hexToRgba(g.color, 0.25), border: `1.5px solid ${g.color}`, color: g.color, fontSize: 16 }}>{g.shape}</span>
+                        <span className="flex items-center justify-center rounded-xl" style={{ width: 40, height: 40, background: hexToRgba(g.color, 0.25), border: `1.5px solid ${g.color}`, color: g.color, fontSize: 16 }}>{g.shape}</span>
                         <div>
                           <p className="display text-xl" style={{ color: "var(--paper)" }}>{g.name}</p>
                           <p className="mono text-xs" style={{ color: "var(--mist)" }}>{memberIds.length} people</p>
@@ -2024,16 +2436,16 @@ export default function SyncApp() {
                     </button>
                     {showCustomize && (
                       <div className="rounded-xl p-3 mb-4" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>color</p>
+                        <p className="eyebrow mb-2">color</p>
                         <div className="flex flex-wrap gap-2 mb-3">
                           {COLOR_PALETTE.map((c) => (
-                            <span key={c.hex} onClick={() => updateGroup(g.id, { color: c.hex })} className="sync-swatch inline-block rounded-full" style={{ width: 22, height: 22, background: c.hex, boxShadow: g.color === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />
+                            <button key={c.hex} onClick={() => updateGroup(g.id, { color: c.hex })} aria-label={`Set color to ${c.name}`} className="sync-swatch inline-block rounded-xl" style={{ width: 22, height: 22, background: c.hex, boxShadow: g.color === c.hex ? `0 0 0 2px var(--ink), 0 0 0 4px ${c.hex}` : "none" }} />
                           ))}
                         </div>
-                        <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>icon</p>
+                        <p className="eyebrow mb-2">icon</p>
                         <div className="flex flex-wrap gap-2">
                           {GROUP_SHAPES.map((s) => (
-                            <button key={s} onClick={() => updateGroup(g.id, { shape: s })} className="flex items-center justify-center rounded-full" style={{ width: 26, height: 26, background: g.shape === s ? "var(--ink-3)" : "transparent", border: "1px solid var(--ink-4)", color: g.color, fontSize: 13 }}>{s}</button>
+                            <button key={s} onClick={() => updateGroup(g.id, { shape: s })} aria-label={`Use icon ${s}`} className="flex items-center justify-center rounded-xl" style={{ width: 26, height: 26, background: g.shape === s ? "var(--ink-3)" : "transparent", border: "1px solid var(--ink-4)", color: g.color, fontSize: 13 }}>{s}</button>
                           ))}
                         </div>
                       </div>
@@ -2043,7 +2455,7 @@ export default function SyncApp() {
                       {memberIds.map((id) => {
                         const person = peopleById[id];
                         return (
-                          <span key={id} className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 py-1" style={{ border: "1px solid var(--ink-3)" }}>
+                          <span key={id} className="inline-flex items-center gap-1.5 rounded-xl pl-1 pr-3 py-1" style={{ border: "1px solid var(--ink-3)" }}>
                             <Avatar person={person} size={18} />
                             <span className="text-xs" style={{ color: "var(--paper)" }}>{person.name}</span>
                           </span>
@@ -2056,12 +2468,12 @@ export default function SyncApp() {
                       {upcomingRanges.length === 0 ? (
                         <span className="text-sm" style={{ color: "var(--mist)" }}>No shared free days yet this month.</span>
                       ) : (
-                        upcomingRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-full px-2.5 py-1" style={{ background: g.color, color: "var(--on-accent)" }}>{rangeLabel(s, e)}</button>))
+                        upcomingRanges.map(([s, e]) => (<button key={s} onClick={() => pickDate(s, e)} className="mono text-xs rounded-xl px-2.5 py-1" style={{ background: g.color, color: "var(--on-accent)" }}>{rangeLabel(s, e)}</button>))
                       )}
                     </div>
 
                     <p className="text-xs mono mb-2" style={{ color: "var(--mist)" }}>full calendar — scroll for the rest of the year, tap any date to invite</p>
-                    <div className="sync-scroll grid grid-cols-2 gap-2 mb-5 p-1" style={{ maxHeight: 300, overflowY: "auto", background: "var(--ink)", borderRadius: 12 }}>
+                    <div className="sync-scroll grid grid-cols-2 gap-2 mb-5 p-1" style={{ maxHeight: 300, overflowY: "auto", background: "var(--ink)", borderRadius: 7 }}>
                       {months.map(({ year, month }) => (<MonthGrid key={`${year}-${month}`} year={year} month={month} mode="group" groupId={g.id} compact onPick={pickDate} />))}
                     </div>
 
@@ -2072,7 +2484,7 @@ export default function SyncApp() {
                           const sender = peopleById[m.personId] || you;
                           return (
                             <div key={m.id} className="rounded-xl px-3 py-2" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                              <p className="text-xs mono mb-0.5" style={{ color: sender.color }}>{sender.name}</p>
+                              <p className="text-xs mono mb-0.5 flex items-center gap-1.5" style={{ color: sender.color }}>{sender.name}{m.ts && <span style={{ color: "var(--mist)", opacity: 0.7 }}>· {timeAgo(m.ts)}</span>}</p>
                               <p className="text-sm" style={{ color: "var(--paper)" }}>{m.text}</p>
                               <MessageReactions message={m} onToggle={(emoji) => toggleGroupReaction(g.id, m.id, emoji)} />
                             </div>
@@ -2086,16 +2498,18 @@ export default function SyncApp() {
                         onChange={(e) => setDmDraft(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") { sendGroupMessage(g.id, dmDraft); setDmDraft(""); } }}
                         placeholder={`Message as ${editingAsPerson.name}...`}
-                        className="text-sm rounded-full px-4 py-2 outline-none flex-1"
+                        className="text-sm rounded-xl px-4 py-2 outline-none flex-1"
                         style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}
                       />
-                      <button onClick={() => { sendGroupMessage(g.id, dmDraft); setDmDraft(""); }} className="text-sm rounded-full px-4 py-2" style={{ background: "var(--marigold)", color: "var(--on-accent)" }}>Send</button>
+                      <button onClick={() => { sendGroupMessage(g.id, dmDraft); setDmDraft(""); }} className="text-sm rounded-xl px-4 py-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Send</button>
                     </div>
                     <p className="text-xs mono mt-3" style={{ color: "var(--mist)", opacity: 0.8 }}>This demo delivers messages inside the app only — a real version would reach the group by text too.</p>
                   </div>
                 </div>
               );
             })()}
+
+            {showTour && <AppTour tab={tab} setTab={setTab} onFinish={() => setShowTour(false)} />}
           </>
         )}
       </div>
