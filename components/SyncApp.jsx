@@ -373,17 +373,22 @@ export default function SyncApp() {
   const [proposeTime, setProposeTime] = useState("");
   const [proposeTitle, setProposeTitle] = useState("");
   const [proposeMessage, setProposeMessage] = useState("");
-  const [planSectionTab, setPlanSectionTab] = useState("plan"); // "plan" | "event" — which form the Friends Calendars plan section shows
+  const [planSectionTab, setPlanSectionTab] = useState("plan"); // "plan" | "event" — which form the quick-plan sheet shows
   const [eventDate, setEventDate] = useState("");
   const [eventCity, setEventCity] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventMessage, setEventMessage] = useState("");
-  const [planSectionFocusAt, setPlanSectionFocusAt] = useState(0);
   const [showPlanMoreDetails, setShowPlanMoreDetails] = useState(false);
   const [showEventMoreDetails, setShowEventMoreDetails] = useState(false);
   const [proposeError, setProposeError] = useState("");
   const [eventError, setEventError] = useState("");
+  // Quick-plan sheet: an overlay (not a tab) so starting a plan or event never
+  // means switching away from whatever you're looking at. Remembers the last
+  // group you proposed to, so re-proposing doesn't mean re-picking who.
+  const [showPlanSheet, setShowPlanSheet] = useState(false);
+  const [lastPlanGroupId, setLastPlanGroupId] = useState("");
+  const [dismissedSugg, setDismissedSugg] = useState({});
 
   const [inspectedKey, setInspectedKey] = useState(null); // currently hovered/clicked day, Groups tab
   const [inspectedRangeEnd, setInspectedRangeEnd] = useState(null); // set when a multi-day bubble was clicked
@@ -436,16 +441,6 @@ export default function SyncApp() {
 
   const paintRef = useRef({ painting: false, value: "free" });
   const months = useMemo(() => next12Months(), []);
-
-  // Scroll the plan/event section into view whenever "+ New plan" or "+ Add
-  // event" is tapped elsewhere in the app — otherwise it can open far below
-  // the fold (behind the moon calendars) and look like the tap did nothing.
-  const proposeFormRef = useRef(null);
-  useEffect(() => {
-    if (tab === "friends" && planSectionFocusAt) {
-      proposeFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [tab, planSectionFocusAt]);
 
   useEffect(() => {
     const stop = () => (paintRef.current.painting = false);
@@ -526,11 +521,43 @@ export default function SyncApp() {
     if (!proposeDate) { setProposeError("Pick a date first."); return; }
     if (!proposeGroupId) { setProposeError("Choose a group to propose this to."); return; }
     createProposal("group", proposeGroupId, proposeDate, proposeTitle, proposeMessage, proposeCity, null, proposeTime);
+    setLastPlanGroupId(proposeGroupId);
     setProposeDate(""); setProposeGroupId(""); setProposeCity(""); setProposeTitle(""); setProposeMessage(""); setProposeTime(""); setProposeError("");
+    setShowPlanSheet(false);
   };
   const submitEventForm = () => {
     if (!eventDate) { setEventError("Pick a date first."); return; }
     createEvent();
+    setShowPlanSheet(false);
+  };
+  // Soonest day (within 2 weeks) the whole group is free, else just tomorrow —
+  // a sensible default date so opening the sheet rarely means picking one by hand.
+  const bestFreeDayForGroup = (groupId) => {
+    const group = groups.find((g) => g.id === groupId);
+    if (group) {
+      for (let i = 1; i <= 14; i++) {
+        const iso = shiftIso(todayIso, i);
+        if (groupFullyFree(group, iso)) return iso;
+      }
+    }
+    return shiftIso(todayIso, 1);
+  };
+  // Opens the quick-plan sheet as an overlay — from a day, the FAB, a home
+  // suggestion, or "+ Add event" — never by switching tabs. Prefills whatever
+  // it can: the date you tapped (or the best upcoming free day), and the
+  // group you last proposed to.
+  const openPlanSheet = (section, dateKey) => {
+    setPlanSectionTab(section);
+    if (section === "event") {
+      setEventError("");
+      setEventDate(dateKey || eventDate || todayIso);
+    } else {
+      setProposeError("");
+      const groupId = proposeGroupId || (groups.some((g) => g.id === lastPlanGroupId) ? lastPlanGroupId : groups[0]?.id || "");
+      setProposeGroupId(groupId);
+      setProposeDate(dateKey || proposeDate || (groupId ? bestFreeDayForGroup(groupId) : shiftIso(todayIso, 1)));
+    }
+    setShowPlanSheet(true);
   };
   const updateProposal = (id, patch) => setProposals((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const addInviteeToProposal = (proposalId, personId) => {
@@ -940,13 +967,12 @@ export default function SyncApp() {
               <Saamy size={30} />
               <p className="text-sm" style={{ color: "var(--mist)" }}>Nothing planned yet.</p>
             </div>
-            {groups.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {groups.slice(0, 3).map((g) => (
-                  <button key={g.id} onClick={() => openInviteModal("group", g.id, selectedDayIso)} className="text-xs rounded-xl px-3 py-1.5" style={{ border: "1px solid var(--ink-3)", color: "var(--paper)" }}>+ Invite {g.name}</button>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {groups.slice(0, 3).map((g) => (
+                <button key={g.id} onClick={() => openInviteModal("group", g.id, selectedDayIso)} className="text-xs rounded-xl px-3 py-1.5" style={{ border: "1px solid var(--ink-3)", color: "var(--paper)" }}>+ Invite {g.name}</button>
+              ))}
+              <button onClick={() => openPlanSheet("event", selectedDayIso)} className="text-xs rounded-xl px-3 py-1.5" style={{ background: "var(--marigold)", color: "var(--on-accent)", fontWeight: 700 }}>+ Add event</button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1045,6 +1071,101 @@ export default function SyncApp() {
     );
   };
 
+  // ---- My Calendar's "what's coming up" feed: real suggestions generated
+  // from actual availability + birthdays, not placeholder copy. Each card is
+  // one concrete fact (two friends are free the same day, a birthday is
+  // close, a whole stretch of days lines up) with a one-tap primary action
+  // straight into the existing invite/plan flow — no extra picking. ----
+  const friendsOnly = people.filter((p) => p.id !== "you");
+  const freeFriendsOn = (iso) => friendsOnly.filter((p) => getStatus(p.id, iso) === "free");
+  const joinNames = (arr) => (arr.length <= 1 ? arr[0] || "" : arr.length === 2 ? `${arr[0]} and ${arr[1]}` : `${arr.slice(0, -1).join(", ")}, and ${arr[arr.length - 1]}`);
+  const dayName = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+  const homeSuggestions = (() => {
+    const out = [];
+    // 1) next day where 2+ friends are free
+    for (let i = 1; i <= 21; i++) {
+      const iso = shiftIso(todayIso, i);
+      const ids = freeFriendsOn(iso);
+      if (ids.length >= 2) {
+        const names = ids.slice(0, 3).map((p) => p.name);
+        out.push({
+          id: "free-" + iso, kind: "free",
+          label: ids.length >= friendsOnly.length ? "EVERYONE'S FREE" : ids.length === 2 ? "BOTH FREE" : "ALL FREE",
+          who: ids.slice(0, 3),
+          text: `${joinNames(names)} ${ids.length === 2 ? "are both" : "are all"} free ${dayName(iso)}${iso === shiftIso(todayIso, 1) ? " (tomorrow)" : ""}.`,
+          primary: "Invite them", secondary: "Not now", iso, ids: ids.map((p) => p.id),
+        });
+        break;
+      }
+    }
+    // 2) nearest friend birthday within 45 days
+    let best = null;
+    friendsOnly.forEach((p) => {
+      if (!p.birthday) return;
+      const [mm, dd] = p.birthday.split("-").map(Number);
+      const now = new Date(); const base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let d = new Date(base.getFullYear(), mm - 1, dd);
+      if (d < base) d = new Date(base.getFullYear() + 1, mm - 1, dd);
+      const days = Math.round((d - base) / 86400000);
+      if (days <= 45 && (!best || days < best.days)) best = { p, days, iso: isoDate(d) };
+    });
+    if (best) {
+      out.push({
+        id: "bday-" + best.p.id, kind: "birthday", label: `BIRTHDAY, ${niceDateLabel(best.iso).toUpperCase()}`, who: [best.p],
+        text: best.days === 0 ? `It's ${best.p.name}'s birthday today. Plan something?` : `${best.p.name}'s birthday is in ${best.days} day${best.days === 1 ? "" : "s"}. Start a group plan?`,
+        primary: "Start a plan", secondary: "Remind me", iso: best.iso, ids: [best.p.id],
+      });
+    }
+    // 3) best stretch of 2+ days where several friends are free
+    let run = null; let bestRun = null;
+    for (let i = 1; i <= 90; i++) {
+      const iso = shiftIso(todayIso, i);
+      const n = freeFriendsOn(iso).length;
+      if (n >= 2) run = run ? { ...run, end: iso, min: Math.min(run.min, n), len: run.len + 1 } : { start: iso, end: iso, min: n, len: 1 };
+      else { if (run && run.len >= 2 && (!bestRun || run.min * run.len > bestRun.min * bestRun.len)) bestRun = run; run = null; }
+    }
+    if (run && run.len >= 2 && (!bestRun || run.min * run.len > bestRun.min * bestRun.len)) bestRun = run;
+    if (bestRun) {
+      const ids = friendsOnly.filter((p) => { let ok = true; for (let d = bestRun.start; d <= bestRun.end; d = shiftIso(d, 1)) if (getStatus(p.id, d) !== "free") ok = false; return ok; });
+      const everyone = ids.length === friendsOnly.length && friendsOnly.length > 0;
+      out.push({
+        id: "stretch-" + bestRun.start, kind: "stretch", label: "BEST STRETCH", highlight: true, who: ids.slice(0, 4),
+        text: everyone ? `All ${people.length} of you are free ${rangeLabel(bestRun.start, bestRun.end)}.` : `${joinNames((ids.length ? ids : freeFriendsOn(bestRun.start)).slice(0, 3).map((p) => p.name))} are free ${rangeLabel(bestRun.start, bestRun.end)}.`,
+        primary: "Plan a trip", iso: bestRun.start, ids: (ids.length ? ids : freeFriendsOn(bestRun.start)).map((p) => p.id),
+      });
+    }
+    return out.filter((c) => !dismissedSugg[c.id]);
+  })();
+  const runHomeSuggestion = (c) => {
+    if (c.ids && c.ids.length === 1) return openInviteModal("person", c.ids[0], c.iso);
+    openPlanSheet("plan", c.iso);
+  };
+
+  const HomeSuggestions = () => {
+    if (homeSuggestions.length === 0) return null;
+    return (
+      <div className="flex flex-col mb-4" style={{ gap: 10 }}>
+        {homeSuggestions.map((c) => (
+          <div key={c.id} className="rounded-2xl p-4" style={{ background: c.highlight ? "var(--mint)" : "var(--ink-2)", border: `1px solid ${c.highlight ? "var(--mint)" : "var(--ink-3)"}` }}>
+            <div className="flex items-center mb-2">
+              {(c.who || []).slice(0, 4).map((p, i) => (
+                <span key={p.id} style={{ marginLeft: i ? -8 : 0 }}><Avatar person={p} size={26} ring={c.highlight ? "var(--mint)" : "var(--ink-2)"} /></span>
+              ))}
+              <span className="mono" style={{ marginLeft: c.who?.length ? 8 : 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color: c.highlight ? "var(--on-accent)" : "var(--marigold)" }}>{c.label}</span>
+            </div>
+            <p className="display" style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, color: c.highlight ? "var(--on-accent)" : "var(--paper)", marginBottom: 12 }}>{c.text}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => runHomeSuggestion(c)} className="text-xs rounded-xl px-4 py-2" style={{ background: c.highlight ? "var(--ink)" : "var(--marigold)", color: c.highlight ? "var(--mint)" : "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>{c.primary}</button>
+              {c.secondary && (
+                <button onClick={() => setDismissedSugg((d) => ({ ...d, [c.id]: true }))} className="text-xs rounded-xl px-4 py-2" style={{ background: c.highlight ? "rgba(5,32,21,0.14)" : "var(--ink-3)", color: c.highlight ? "var(--on-accent)" : "var(--paper)", fontWeight: 700 }}>{c.secondary}</button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // ---- dashboard-style stat panel: two real stat tiles + a 7-day activity
   // chart (bar height = free/tentative/unmarked, straight from getStatus —
   // no fabricated hour totals), plus a compact "up next" row underneath ----
@@ -1056,7 +1177,7 @@ export default function SyncApp() {
     const next7 = Array.from({ length: 7 }, (_, i) => shiftIso(todayIso, i));
     const freeDaysNext7 = next7.filter((iso) => getStatus(editingAsId, iso) === "free").length;
     const plansNext30 = proposals.filter((p) => { const d = daysFromToday(p.endDateKey || p.dateKey); return d >= 0 && d < 30; }).length;
-    const goAddEvent = () => { setTab("friends"); setPlanSectionTab("event"); setPlanSectionFocusAt(Date.now()); };
+    const goAddEvent = () => openPlanSheet("event", todayIso);
 
     return (
       <div className="sync-card rounded-2xl p-4" style={{ background: "var(--ink-2)" }}>
@@ -1257,6 +1378,8 @@ export default function SyncApp() {
             {tab === "groups" && (
               <>
               <main className="px-5 pb-28 sync-tabpanel">
+                <HomeSuggestions />
+
                 <div className="mb-4">
                   <NextUpHero />
                 </div>
@@ -1396,7 +1519,7 @@ export default function SyncApp() {
 
               </main>
               <button
-                onClick={() => { setTab("friends"); setPlanSectionTab("event"); setEventDate(selectedDayIso); setPlanSectionFocusAt(Date.now()); }}
+                onClick={() => openPlanSheet("event", selectedDayIso)}
                 aria-label="Add event"
                 data-tour="tour-fab"
                 className="sync-fab flex items-center justify-center rounded-2xl"
@@ -1647,60 +1770,6 @@ export default function SyncApp() {
                   </section>
                 )}
 
-                {/* Manual plan / event form */}
-                <section ref={proposeFormRef} className="mt-6 rounded-2xl p-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)", scrollMarginTop: 90 }}>
-                  <div className="sync-toggle-track flex items-center gap-1 mb-4 w-fit rounded-xl p-1" style={{ background: "var(--ink)" }}>
-                    <button onClick={() => setPlanSectionTab("plan")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "plan" ? "var(--marigold)" : "transparent", color: planSectionTab === "plan" ? "var(--on-accent)" : "var(--mist)" }}>Propose a plan</button>
-                    <button onClick={() => setPlanSectionTab("event")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "event" ? "var(--marigold)" : "transparent", color: planSectionTab === "event" ? "var(--on-accent)" : "var(--mist)" }}>Add an event</button>
-                  </div>
-
-                  {planSectionTab === "plan" ? (
-                    <div className="rounded-xl p-4 mb-3" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                      <input value={proposeTitle} onChange={(e) => setProposeTitle(e.target.value)} placeholder="Name this invitation" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <input type="date" value={proposeDate} onChange={(e) => { setProposeDate(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                        <select value={proposeGroupId} onChange={(e) => { setProposeGroupId(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
-                          <option value="">Choose a group</option>
-                          {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
-                        </select>
-                        <select value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
-                          <option value="">Time (optional)</option>
-                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
-                        </select>
-                      </div>
-                      <button onClick={() => setShowPlanMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showPlanMoreDetails ? "hide more details" : "more details (location, message)"}</button>
-                      {showPlanMoreDetails && (
-                        <>
-                          <input value={proposeCity} onChange={(e) => setProposeCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                          <textarea value={proposeMessage} onChange={(e) => setProposeMessage(e.target.value)} placeholder="Message (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                        </>
-                      )}
-                      {proposeError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{proposeError}</p>}
-                      <button onClick={submitPlanForm} className="text-sm rounded-xl px-4 py-2 display mt-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Create</button>
-                    </div>
-                  ) : (
-                    <div className="rounded-xl p-4 mb-3" style={{ background: "var(--ink)", border: "1px solid var(--ink-3)" }}>
-                      <input value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="Event name" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <input type="date" value={eventDate} onChange={(e) => { setEventDate(e.target.value); setEventError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                        <select value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
-                          <option value="">Time (optional)</option>
-                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
-                        </select>
-                      </div>
-                      <button onClick={() => setShowEventMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showEventMoreDetails ? "hide more details" : "more details (location, notes)"}</button>
-                      {showEventMoreDetails && (
-                        <>
-                          <input value={eventCity} onChange={(e) => setEventCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                          <textarea value={eventMessage} onChange={(e) => setEventMessage(e.target.value)} placeholder="Notes (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink-2)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
-                        </>
-                      )}
-                      {eventError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{eventError}</p>}
-                      <button onClick={submitEventForm} className="text-sm rounded-xl px-4 py-2 display mt-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add event</button>
-                    </div>
-                  )}
-                  <p className="text-sm" style={{ color: "var(--mist)" }}>Your full list of plans lives on the Plans tab.</p>
-                </section>
               </main>
               );
             })()}
@@ -2278,6 +2347,77 @@ export default function SyncApp() {
                     <button onClick={() => setInviteModal(null)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
                     <button onClick={sendInvite} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Send</button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quick-plan sheet: an overlay reachable from any tab (FAB, a day,
+                a home suggestion) — proposing a plan or adding an event never
+                means navigating away from where you were. */}
+            {showPlanSheet && (
+              <div style={{ position: "absolute", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)" }} className="flex flex-col justify-end" onClick={() => setShowPlanSheet(false)}>
+                <div onClick={(e) => e.stopPropagation()} className="sync-scroll sync-sheet-in" style={{ maxHeight: "88%", overflowY: "auto", background: "var(--ink-2)", borderTopLeftRadius: 12, borderTopRightRadius: 12, border: "1px solid var(--ink-4)", boxShadow: "0 -20px 45px rgba(0,0,0,0.4)", padding: 20 }}>
+                  <div className="sync-toggle-track flex items-center gap-1 mb-4 w-fit rounded-xl p-1" style={{ background: "var(--ink)" }}>
+                    <button onClick={() => setPlanSectionTab("plan")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "plan" ? "var(--marigold)" : "transparent", color: planSectionTab === "plan" ? "var(--on-accent)" : "var(--mist)" }}>Propose a plan</button>
+                    <button onClick={() => setPlanSectionTab("event")} className="sync-toggle-btn text-sm rounded-xl px-4 py-1.5" style={{ background: planSectionTab === "event" ? "var(--marigold)" : "transparent", color: planSectionTab === "event" ? "var(--on-accent)" : "var(--mist)" }}>Add an event</button>
+                  </div>
+
+                  {planSectionTab === "plan" ? (
+                    <div>
+                      <input value={proposeTitle} onChange={(e) => setProposeTitle(e.target.value)} placeholder="Name this invitation" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="date" value={proposeDate} onChange={(e) => { setProposeDate(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        <select value={proposeGroupId} onChange={(e) => { setProposeGroupId(e.target.value); setProposeError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }}>
+                          <option value="">Choose a group</option>
+                          {groups.map((g) => (<option key={g.id} value={g.id}>{g.name}</option>))}
+                        </select>
+                        <select value={proposeTime} onChange={(e) => setProposeTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
+                          <option value="">Time (optional)</option>
+                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                        </select>
+                      </div>
+                      {proposeGroupId && (
+                        <p className="text-xs mono mb-2" style={{ color: proposeDate && groupFullyFree(groups.find((g) => g.id === proposeGroupId), proposeDate) ? "var(--mint)" : "var(--mist)" }}>
+                          {proposeDate && groupFullyFree(groups.find((g) => g.id === proposeGroupId), proposeDate) ? "Everyone's free that day." : "Not everyone's marked free yet — ask anyway?"}
+                        </p>
+                      )}
+                      <button onClick={() => setShowPlanMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showPlanMoreDetails ? "hide more details" : "more details (location, message)"}</button>
+                      {showPlanMoreDetails && (
+                        <>
+                          <input value={proposeCity} onChange={(e) => setProposeCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <textarea value={proposeMessage} onChange={(e) => setProposeMessage(e.target.value)} placeholder="Message (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        </>
+                      )}
+                      {proposeError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{proposeError}</p>}
+                      <div className="flex items-center gap-2 justify-end mt-2">
+                        <button onClick={() => setShowPlanSheet(false)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                        <button onClick={submitPlanForm} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Create</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <input value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} placeholder="Event name" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="date" value={eventDate} onChange={(e) => { setEventDate(e.target.value); setEventError(""); }} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        <select value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="text-sm rounded-xl px-4 py-2 outline-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)", width: 156 }}>
+                          <option value="">Time (optional)</option>
+                          {TIME_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                        </select>
+                      </div>
+                      <button onClick={() => setShowEventMoreDetails((s) => !s)} className="text-xs mono mb-2" style={{ color: "var(--marigold)" }}>{showEventMoreDetails ? "hide more details" : "more details (location, notes)"}</button>
+                      {showEventMoreDetails && (
+                        <>
+                          <input value={eventCity} onChange={(e) => setEventCity(e.target.value)} placeholder="Location (optional)" className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                          <textarea value={eventMessage} onChange={(e) => setEventMessage(e.target.value)} placeholder="Notes (optional)" rows={3} className="text-sm rounded-xl px-4 py-2 outline-none w-full mb-2 resize-none" style={{ background: "var(--ink)", color: "var(--paper)", border: "1px solid var(--ink-3)" }} />
+                        </>
+                      )}
+                      {eventError && <p className="text-xs mono mb-2" style={{ color: "var(--ember)" }}>{eventError}</p>}
+                      <div className="flex items-center gap-2 justify-end mt-2">
+                        <button onClick={() => setShowPlanSheet(false)} className="text-sm rounded-xl px-4 py-2" style={{ color: "var(--mist)" }}>Cancel</button>
+                        <button onClick={submitEventForm} className="text-sm rounded-xl px-5 py-2 display" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>Add event</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

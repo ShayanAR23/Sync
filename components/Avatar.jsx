@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef } from "react";
+import { Monkey } from "./Monkey";
+import { defaultLookFor } from "./monkeyData";
 
 // Curated "bitmoji-style" sticker set — a person picks one of these, or
 // uploads their own photo, or falls back to their initial letter.
@@ -34,11 +36,13 @@ function downscaleImage(file, maxSize = 160) {
   });
 }
 
-// Shared squircle renderer: photo > emoji sticker > initial letter. A fixed
-// (not proportional) corner radius keeps real corners visible at every size
+// Shared squircle renderer: photo > emoji sticker > their plush monkey (the
+// default — Saamy's own cast of look-alikes, one per person). A fixed (not
+// proportional) corner radius keeps real corners visible at every size
 // instead of rounding all the way into a circle.
 export function Avatar({ person, size = 32, ring }) {
   if (!person) return null;
+  const monkeyLook = person.monkey || defaultLookFor(person.id || person.name);
   const style = {
     width: size,
     height: size,
@@ -58,7 +62,9 @@ export function Avatar({ person, size = 32, ring }) {
       ) : person.avatarEmoji ? (
         <span>{person.avatarEmoji}</span>
       ) : (
-        <span>{person.name.charAt(0)}</span>
+        <span style={{ display: "block", width: size, height: size, lineHeight: 0 }}>
+          <Monkey look={monkeyLook} size={size} crop="bust" />
+        </span>
       )}
     </span>
   );
@@ -96,7 +102,7 @@ export function AvatarPicker({ person, onChange }) {
               className="text-xs"
               style={{ color: "var(--mist)" }}
             >
-              Reset
+              Use monkey
             </button>
           )}
           <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
