@@ -146,7 +146,7 @@ export const SLOTS = [
   { id: "held", label: "Holding", items: HELD },
   { id: "fur", label: "Fur", items: FUR },
 ];
-export const DEFAULT_LOOK = { name: "Saamy", fur: "Mint", eyes: "Round glasses" };
+export const DEFAULT_LOOK = { name: "Saamy", fur: "Cocoa" };
 const FUR_NAMES = Object.keys(FUR);
 
 // Default fur for people who haven't picked one: stable per person.
@@ -180,19 +180,25 @@ export function monkeySvg(look = {}, { size = 150, crop = null, shadow = true } 
   const tail = `<path d="M92 134 Q130 140 128 108 Q126 94 114 100" fill="none" stroke="${fu.f2}" stroke-width="8" stroke-linecap="round"/>`;
   const legs = [57, 83].map((c) => `<ellipse cx="${c}" cy="144" rx="11" ry="8" fill="${F}"/>`).join("");
   const feet = FC.map((c) => `<ellipse cx="${c}" cy="152" rx="15" ry="8" fill="${F}"/><ellipse cx="${c}" cy="153" rx="7.5" ry="3.8" fill="${Mu}"/>`).join("");
-  const arms = [[41, 14], [99, -14]].map(([x, r]) => `<ellipse cx="${x}" cy="112" rx="8.5" ry="15" fill="${F}" transform="rotate(${r} ${x} 112)"/>`).join("");
-  const hands = [37, 103].map((x) => `<ellipse cx="${x}" cy="126" rx="8.6" ry="7.6" fill="${F}"/><ellipse cx="${x}" cy="127.5" rx="4.4" ry="3.4" fill="${Mu}"/>`).join("");
+  const arms = [[45, 10], [95, -10]].map(([x, r]) => `<ellipse cx="${x}" cy="110" rx="9" ry="14" fill="${F}" transform="rotate(${r} ${x} 110)"/>`).join("");
+  const hands = [41, 99].map((x) => `<ellipse cx="${x}" cy="122" rx="8.6" ry="7.6" fill="${F}"/><ellipse cx="${x}" cy="123.5" rx="4.4" ry="3.4" fill="${Mu}"/>`).join("");
   const trunk = `<path d="${TORSO}" fill="${F}"/><ellipse cx="70" cy="122" rx="14" ry="15" fill="${Mu}"/>`;
+  // A slightly bigger head over a slightly shorter body reads as cuter than
+  // a strict 1:1 head/body split, without going full chibi (head staying
+  // clearly smaller than the body) — shrink the body just a touch toward
+  // the shoulder line instead of redrawing every path by hand.
+  const bodyScale = 0.92;
+  const body = `<g transform="translate(70 86) scale(${bodyScale}) translate(-70 -86)">${back}${tail}${legs}${arms}${trunk}${feet}${SHOES[l.shoes] || ""}${hands}${mid}</g>`;
   const sleepy = l.hat === "Nightcap";
   const eyes = sleepy
-    ? `<path d="M42 58 q6 6 12 0 M66 58 q6 6 12 0" fill="none" stroke="${K}" stroke-width="2.8" stroke-linecap="round"/>`
-    : `<circle cx="48" cy="57" r="6.2" fill="${K}"/><circle cx="72" cy="57" r="6.2" fill="${K}"/><circle cx="50.2" cy="54.6" r="2.4" fill="#fff"/><circle cx="74.2" cy="54.6" r="2.4" fill="#fff"/><circle cx="46" cy="59.6" r="1.2" fill="#fff"/><circle cx="70" cy="59.6" r="1.2" fill="#fff"/>`;
-  const mouth = `<ellipse cx="60" cy="66" rx="3.6" ry="2.5" fill="${fu.nose}"/><path d="M53 72 Q60 79 67 72" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round"/>`;
+    ? `<path d="M41 58 q7 7 14 0 M65 58 q7 7 14 0" fill="none" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`
+    : `<circle cx="47" cy="58" r="7.6" fill="${K}"/><circle cx="73" cy="58" r="7.6" fill="${K}"/><circle cx="49.8" cy="55" r="2.9" fill="#fff"/><circle cx="75.8" cy="55" r="2.9" fill="#fff"/><circle cx="44.5" cy="61.2" r="1.5" fill="#fff"/><circle cx="70.5" cy="61.2" r="1.5" fill="#fff"/>`;
+  const mouth = `<ellipse cx="60" cy="68" rx="3.6" ry="2.5" fill="${fu.nose}"/><path d="M53 74 Q60 81 67 74" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round"/>`;
   const acc = (HATS[l.hat] || "") + (EYES[l.eyes] || "");
-  const head = `<circle cx="36" cy="58" r="14" fill="${F}"/><circle cx="36" cy="58" r="8" fill="${fu.inner}"/><circle cx="84" cy="58" r="14" fill="${F}"/><circle cx="84" cy="58" r="8" fill="${fu.inner}"/><ellipse cx="60" cy="60" rx="40" ry="36" fill="${F}"/><circle cx="48" cy="56" r="13" fill="${Mu}"/><circle cx="72" cy="56" r="13" fill="${Mu}"/><ellipse cx="60" cy="69" rx="21" ry="16" fill="${Mu}"/><ellipse cx="40" cy="36" rx="14" ry="7" fill="#fff" opacity=".22" transform="rotate(-25 40 36)"/>${eyes}${mouth}<circle cx="38" cy="68" r="5" fill="#F4A38C" opacity=".55"/><circle cx="82" cy="68" r="5" fill="#F4A38C" opacity=".55"/>${acc}`;
-  const ht = "translate(70 73) scale(1.08) translate(-60 -60)";
+  const head = `<circle cx="24" cy="50" r="18" fill="${F}"/><circle cx="24" cy="50" r="10" fill="${fu.inner}"/><circle cx="96" cy="50" r="18" fill="${F}"/><circle cx="96" cy="50" r="10" fill="${fu.inner}"/><ellipse cx="60" cy="62" rx="44" ry="40" fill="${F}"/><ellipse cx="60" cy="72" rx="23" ry="17" fill="${Mu}"/><ellipse cx="38" cy="36" rx="16" ry="8" fill="#fff" opacity=".22" transform="rotate(-25 38 36)"/>${eyes}${mouth}<circle cx="35" cy="71" r="5.6" fill="#F4A38C" opacity=".55"/><circle cx="85" cy="71" r="5.6" fill="#F4A38C" opacity=".55"/>${acc}`;
+  const ht = "translate(70 75) scale(1.1) translate(-60 -60)";
   const vb = crop === "bust" ? "12 0 116 126" : "0 -8 140 182";
   const [, , vw, vh] = vb.split(" ").map(Number);
-  const sh = shadow && !crop ? '<ellipse cx="70" cy="162" rx="46" ry="6" fill="#000" opacity=".3"/>' : "";
-  return `<svg width="${size}" height="${Math.round((size * vh) / vw)}" viewBox="${vb}" aria-hidden="true" style="display:block">${defs}${sh}${back}${tail}${legs}${arms}${trunk}${feet}${SHOES[l.shoes] || ""}${hands}${mid}<g transform="${ht}"><g transform="translate(0,-4)">${head}</g>${NECK[l.neck] || ""}</g>${HELD[l.held] || ""}</svg>`;
+  const sh = shadow && !crop ? '<ellipse cx="70" cy="156" rx="42" ry="5.5" fill="#000" opacity=".3"/>' : "";
+  return `<svg width="${size}" height="${Math.round((size * vh) / vw)}" viewBox="${vb}" aria-hidden="true" style="display:block">${defs}${sh}${body}<g transform="${ht}"><g transform="translate(0,-4)">${head}</g>${NECK[l.neck] || ""}</g>${HELD[l.held] || ""}</svg>`;
 }

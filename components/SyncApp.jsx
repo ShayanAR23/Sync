@@ -212,36 +212,25 @@ function tentativePattern(hex) {
   return `repeating-linear-gradient(45deg, ${hexToRgba(hex, 0.45)} 0px, ${hexToRgba(hex, 0.45)} 3px, transparent 3px, transparent 6px)`;
 }
 
-// SAAMY's face as a tiny availability indicator — his expression tracks the
+// A tiny stoplight-style availability indicator — red/yellow/green by the
 // free/total fraction (fraction-based, not headcount-based, so it scales to
-// groups of any size) instead of the old moon-phase emoji.
-function SaamyFace({ frac, size = 16, title }) {
+// groups of any size) instead of a mood face.
+function AvailabilityLight({ frac, size = 16, title }) {
   const f = Number.isFinite(frac) ? Math.max(0, Math.min(1, frac)) : 0;
-  const mood = f >= 0.75 ? "happy" : f >= 0.34 ? "content" : "sleepy";
+  const color = f >= 0.75 ? "var(--mint)" : f >= 0.34 ? "var(--sun)" : "var(--ember)";
   return (
-    <svg width={size} height={size} viewBox="0 0 20 20" title={title} style={{ flexShrink: 0 }}>
-      <ellipse cx="4" cy="4.5" rx="3.1" ry="4.4" fill="#101010" transform="rotate(-18 4 4.5)" />
-      <ellipse cx="16" cy="4.5" rx="2.8" ry="4" fill="#101010" transform="rotate(18 16 4.5)" />
-      <circle cx="10" cy="11" r="7.4" fill="#F2F2F2" stroke="#101010" strokeWidth="0.6" />
-      {mood === "sleepy" ? (
-        <>
-          <path d="M6.3 10.5 q1.5 1.3 3 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
-          <path d="M11.7 10.5 q1.5 1.3 3 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <circle cx="7.6" cy="10.4" r="1.15" fill="#101010" />
-          <circle cx="12.4" cy="10.4" r="1.15" fill="#101010" />
-        </>
-      )}
-      {mood === "happy" ? (
-        <path d="M6.8 13.2 q3.2 3 6.4 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
-      ) : mood === "content" ? (
-        <path d="M7.4 13.6 q2.6 1.6 5.2 0" stroke="#101010" strokeWidth="1" fill="none" strokeLinecap="round" />
-      ) : (
-        <ellipse cx="10" cy="13.6" rx="1.1" ry="0.8" fill="#101010" />
-      )}
-    </svg>
+    <span
+      title={title}
+      style={{
+        display: "inline-block",
+        flexShrink: 0,
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: color,
+        boxShadow: `0 0 ${Math.round(size * 0.6)}px color-mix(in srgb, ${color} 65%, transparent), inset 0 -${Math.max(1, Math.round(size * 0.18))}px ${Math.round(size * 0.3)}px rgba(0,0,0,0.3), inset 0 ${Math.max(1, Math.round(size * 0.12))}px ${Math.round(size * 0.22)}px rgba(255,255,255,0.4)`,
+      }}
+    />
   );
 }
 
@@ -853,7 +842,7 @@ export default function SyncApp() {
                   className="sync-daycell mx-auto flex flex-col items-center justify-center rounded-2xl"
                   style={{ width: cellDim, height: cellDim, cursor: onPick ? "pointer" : "default", background: isFull ? hexToRgba(g?.color || "#888", 0.3) : "transparent" }}
                   title={title}>
-                  <SaamyFace frac={frac} size={compact ? 13 : 15} />
+                  <AvailabilityLight frac={frac} size={compact ? 13 : 15} />
                   <span className="mono" style={{ fontSize: 9, marginTop: 1, color: today ? "var(--paper)" : "var(--mist)" }}>{d.getDate()}</span>
                 </div>
               );
@@ -1146,18 +1135,18 @@ export default function SyncApp() {
     return (
       <div className="flex flex-col mb-4" style={{ gap: 10 }}>
         {homeSuggestions.map((c) => (
-          <div key={c.id} className="rounded-2xl p-4" style={{ background: c.highlight ? "var(--mint)" : "var(--ink-2)", border: `1px solid ${c.highlight ? "var(--mint)" : "var(--ink-3)"}` }}>
+          <div key={c.id} className="rounded-2xl p-4" style={{ background: c.highlight ? "color-mix(in srgb, var(--marigold) 16%, var(--ink-2))" : "var(--ink-2)", border: `1px solid ${c.highlight ? "var(--marigold)" : "var(--ink-3)"}` }}>
             <div className="flex items-center mb-2">
               {(c.who || []).slice(0, 4).map((p, i) => (
-                <span key={p.id} style={{ marginLeft: i ? -8 : 0 }}><Avatar person={p} size={26} ring={c.highlight ? "var(--mint)" : "var(--ink-2)"} /></span>
+                <span key={p.id} style={{ marginLeft: i ? -8 : 0 }}><Avatar person={p} size={26} ring="var(--ink-2)" /></span>
               ))}
-              <span className="mono" style={{ marginLeft: c.who?.length ? 8 : 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color: c.highlight ? "var(--on-accent)" : "var(--marigold)" }}>{c.label}</span>
+              <span className="mono" style={{ marginLeft: c.who?.length ? 8 : 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", color: "var(--marigold)" }}>{c.label}</span>
             </div>
-            <p className="display" style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, color: c.highlight ? "var(--on-accent)" : "var(--paper)", marginBottom: 12 }}>{c.text}</p>
+            <p className="display" style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.25, color: "var(--paper)", marginBottom: 12 }}>{c.text}</p>
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => runHomeSuggestion(c)} className="text-xs rounded-xl px-4 py-2" style={{ background: c.highlight ? "var(--ink)" : "var(--marigold)", color: c.highlight ? "var(--mint)" : "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>{c.primary}</button>
+              <button onClick={() => runHomeSuggestion(c)} className="text-xs rounded-xl px-4 py-2" style={{ background: "var(--marigold)", color: "var(--on-accent)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>{c.primary}</button>
               {c.secondary && (
-                <button onClick={() => setDismissedSugg((d) => ({ ...d, [c.id]: true }))} className="text-xs rounded-xl px-4 py-2" style={{ background: c.highlight ? "rgba(5,32,21,0.14)" : "var(--ink-3)", color: c.highlight ? "var(--on-accent)" : "var(--paper)", fontWeight: 700 }}>{c.secondary}</button>
+                <button onClick={() => setDismissedSugg((d) => ({ ...d, [c.id]: true }))} className="text-xs rounded-xl px-4 py-2" style={{ background: "var(--ink-3)", color: "var(--paper)", fontWeight: 700 }}>{c.secondary}</button>
               )}
             </div>
           </div>
@@ -1282,13 +1271,6 @@ export default function SyncApp() {
           .sync-fade-in { animation:sync-fade 220ms ease both; }
           @keyframes sync-stagger-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
           .sync-stagger-in { opacity:0; animation:sync-stagger-in 460ms cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i, 0) * 70ms); }
-          @keyframes sync-fab-pulse {
-            0%, 100% { box-shadow:0 8px 20px rgba(0,0,0,0.3), 0 0 0 0 color-mix(in srgb, var(--marigold) 55%, transparent); }
-            50% { box-shadow:0 8px 20px rgba(0,0,0,0.3), 0 0 0 10px color-mix(in srgb, var(--marigold) 0%, transparent); }
-          }
-          .sync-fab { animation:sync-fab-in 320ms cubic-bezier(.22,1,.36,1) both, sync-fab-pulse 2.4s ease-in-out 480ms infinite; }
-          .sync-fab:active { transform:scale(0.94) !important; }
-          @keyframes sync-fab-in { from { transform:scale(0.8); opacity:0; } to { transform:scale(1); opacity:1; } }
           @keyframes sync-bob { 0%, 100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
           .sync-bob { animation:sync-bob 3.2s ease-in-out infinite; }
           @keyframes sync-mascot-float { 0%, 100% { transform:translateY(0) rotate(0deg); } 50% { transform:translateY(-3px) rotate(-4deg); } }
@@ -1330,21 +1312,33 @@ export default function SyncApp() {
                 position: "sticky", top: 0, zIndex: 25,
               }}
             >
-              <div className="flex items-center gap-2.5" data-tour="tour-mascot">
+              <div className="flex items-center gap-2.5" data-tour="tour-mascot" style={{ minWidth: 0, flex: 1 }}>
                 <button
                   type="button"
                   onClick={tickleMascot}
                   aria-label="Tickle Saamy"
                   className="sync-mascot-btn"
+                  style={{ flexShrink: 0 }}
                 >
                   <Saamy size={30} pose={tickled ? "tickled" : "default"} className={tickled ? "sync-mascot-tickle" : "sync-mascot-loop"} />
                 </button>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <p className="eyebrow" style={{ color: "rgba(255,255,255,0.55)", marginBottom: 2 }}>Sync</p>
-                  <p className="display text-xl" style={{ color: "#FFFFFF", letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>{TAB_TITLES[tab]}</p>
+                  <p className="display text-xl" style={{ color: "#FFFFFF", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{TAB_TITLES[tab]}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+                {tab === "groups" && (
+                  <button
+                    onClick={() => openPlanSheet("event", selectedDayIso)}
+                    aria-label="Add event"
+                    data-tour="tour-fab"
+                    className="sync-icon-btn flex items-center justify-center rounded-xl"
+                    style={{ width: 34, height: 34, background: "var(--marigold)", color: "var(--on-accent)" }}
+                  >
+                    <span style={{ fontSize: 19, lineHeight: 1, fontWeight: 700, marginTop: -1 }}>+</span>
+                  </button>
+                )}
                 {people.length > 1 && (
                   <button
                     onClick={() => { setFriendsView(groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you"); setTab("friends"); }}
@@ -1389,7 +1383,69 @@ export default function SyncApp() {
                   <DayDetail />
                 </div>
 
-                <PlansStack />
+
+              </main>
+              </>
+            )}
+
+            {tab === "friends" && (() => {
+              const friendsViewId = friendsView || groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you";
+              const viewingGroup = groups.find((g) => g.id === friendsViewId) || null;
+              const viewingPerson = !viewingGroup ? (peopleById[friendsViewId] || you) : null;
+              const weekMode = viewingGroup ? "group" : (friendsViewId === "you" ? "mine" : "person");
+              const weekColor = viewingGroup ? viewingGroup.color : weekMode === "mine" ? editingAsPerson.color : viewingPerson.color;
+              const mondayOfThisWeek = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
+              // Who overlap is computed against — null when viewing "You" alone, since
+              // a solo view has nothing to find shared time with.
+              const targetIds = viewingGroup ? ["you", ...viewingGroup.memberIds] : (weekMode === "person" ? ["you", viewingPerson.id] : null);
+              const canShowBestTimes = targetIds !== null;
+              const effectiveViewMode = canShowBestTimes ? friendsViewMode : "calendar";
+
+              // Best Times — Next 12 Months: rank every upcoming day by how many of
+              // targetIds are free, partial matches included (not just 100%-free days).
+              const bestDaysList = (() => {
+                if (!targetIds) return [];
+                const total = targetIds.length;
+                const scored = [];
+                for (const key of ALL_YEAR_KEYS) {
+                  if (daysFromToday(key) < 0) continue;
+                  const free = targetIds.filter((id) => getStatus(id, key) === "free").length;
+                  if (free === 0) continue;
+                  scored.push({ key, free, total });
+                }
+                scored.sort((a, b) => b.free - a.free || a.key.localeCompare(b.key));
+                return scored.slice(0, 8);
+              })();
+
+              // Best Times — This Week: contiguous free-count runs per day, from the
+              // same hourly availability the week grid below already reads.
+              const bestHourList = (() => {
+                if (!targetIds) return [];
+                const total = targetIds.length;
+                const runs = [];
+                DAYS.forEach((day, di) => {
+                  const date = new Date(mondayOfThisWeek);
+                  date.setDate(date.getDate() + di);
+                  const iso = isoDate(date);
+                  let cur = null;
+                  HOURS.forEach((hour, idx) => {
+                    const free = targetIds.filter((id) => getStatus(id, `${day}-${hour}`) === "free").length;
+                    if (cur && cur.free === free) cur.endIdx = idx;
+                    else { if (cur) runs.push(cur); cur = { day, di, iso, free, startIdx: idx, endIdx: idx }; }
+                  });
+                  if (cur) runs.push(cur);
+                });
+                const withTimes = runs.filter((r) => r.free > 0).map((r) => ({
+                  ...r, total,
+                  startHour: HOURS[r.startIdx], endHour: HOURS[r.endIdx] + 1,
+                }));
+                withTimes.sort((a, b) => b.free - a.free || (b.endHour - b.startHour) - (a.endHour - a.startHour) || (a.di - b.di) || (a.startHour - b.startHour));
+                return withTimes.slice(0, 6);
+              })();
+
+              return (
+              <main className="px-5 pb-28 sync-tabpanel">
+                <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>See how your availability lines up with everyone else's, then turn a shared free day into a plan.</p>
 
                 {/* People + groups management — collapsed by default to keep the calendar front and center */}
                 <section className="rounded-2xl mt-6 mb-4" style={{ background: "var(--ink-2)", border: "1px solid var(--ink-3)" }}>
@@ -1517,82 +1573,6 @@ export default function SyncApp() {
                   )}
                 </section>
 
-              </main>
-              <button
-                onClick={() => openPlanSheet("event", selectedDayIso)}
-                aria-label="Add event"
-                data-tour="tour-fab"
-                className="sync-fab flex items-center justify-center rounded-2xl"
-                style={{
-                  position: "absolute", right: 20, bottom: 94, zIndex: 35,
-                  width: 56, height: 56,
-                  background: "var(--marigold)", color: "var(--on-accent)",
-                  boxShadow: "0 8px 20px rgba(0,0,0,0.45)",
-                }}
-              >
-                <span style={{ fontSize: 28, lineHeight: 1, fontWeight: 600, marginTop: -2 }}>+</span>
-              </button>
-              </>
-            )}
-
-            {tab === "friends" && (() => {
-              const friendsViewId = friendsView || groups[0]?.id || people.find((p) => p.id !== "you")?.id || "you";
-              const viewingGroup = groups.find((g) => g.id === friendsViewId) || null;
-              const viewingPerson = !viewingGroup ? (peopleById[friendsViewId] || you) : null;
-              const weekMode = viewingGroup ? "group" : (friendsViewId === "you" ? "mine" : "person");
-              const weekColor = viewingGroup ? viewingGroup.color : weekMode === "mine" ? editingAsPerson.color : viewingPerson.color;
-              const mondayOfThisWeek = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })();
-              // Who overlap is computed against — null when viewing "You" alone, since
-              // a solo view has nothing to find shared time with.
-              const targetIds = viewingGroup ? ["you", ...viewingGroup.memberIds] : (weekMode === "person" ? ["you", viewingPerson.id] : null);
-              const canShowBestTimes = targetIds !== null;
-              const effectiveViewMode = canShowBestTimes ? friendsViewMode : "calendar";
-
-              // Best Times — Next 12 Months: rank every upcoming day by how many of
-              // targetIds are free, partial matches included (not just 100%-free days).
-              const bestDaysList = (() => {
-                if (!targetIds) return [];
-                const total = targetIds.length;
-                const scored = [];
-                for (const key of ALL_YEAR_KEYS) {
-                  if (daysFromToday(key) < 0) continue;
-                  const free = targetIds.filter((id) => getStatus(id, key) === "free").length;
-                  if (free === 0) continue;
-                  scored.push({ key, free, total });
-                }
-                scored.sort((a, b) => b.free - a.free || a.key.localeCompare(b.key));
-                return scored.slice(0, 8);
-              })();
-
-              // Best Times — This Week: contiguous free-count runs per day, from the
-              // same hourly availability the week grid below already reads.
-              const bestHourList = (() => {
-                if (!targetIds) return [];
-                const total = targetIds.length;
-                const runs = [];
-                DAYS.forEach((day, di) => {
-                  const date = new Date(mondayOfThisWeek);
-                  date.setDate(date.getDate() + di);
-                  const iso = isoDate(date);
-                  let cur = null;
-                  HOURS.forEach((hour, idx) => {
-                    const free = targetIds.filter((id) => getStatus(id, `${day}-${hour}`) === "free").length;
-                    if (cur && cur.free === free) cur.endIdx = idx;
-                    else { if (cur) runs.push(cur); cur = { day, di, iso, free, startIdx: idx, endIdx: idx }; }
-                  });
-                  if (cur) runs.push(cur);
-                });
-                const withTimes = runs.filter((r) => r.free > 0).map((r) => ({
-                  ...r, total,
-                  startHour: HOURS[r.startIdx], endHour: HOURS[r.endIdx] + 1,
-                }));
-                withTimes.sort((a, b) => b.free - a.free || (b.endHour - b.startHour) - (a.endHour - a.startHour) || (a.di - b.di) || (a.startHour - b.startHour));
-                return withTimes.slice(0, 6);
-              })();
-
-              return (
-              <main className="px-5 pb-28 sync-tabpanel">
-                <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>See how your availability lines up with everyone else's, then turn a shared free day into a plan.</p>
 
                 <div className="mb-4 rounded-2xl overflow-hidden" style={{ background: "var(--ink-2)" }}>
                   {groups.length > 0 && (
@@ -1649,9 +1629,9 @@ export default function SyncApp() {
                   <div className="flex items-center gap-3 mb-3 flex-wrap text-xs mono" style={{ color: "var(--mist)" }}>
                     {weekMode === "group" ? (
                       <>
-                        <span className="flex items-center gap-1"><SaamyFace frac={0} size={14} /> nobody free</span>
-                        <span className="flex items-center gap-1"><SaamyFace frac={0.5} size={14} /> half free</span>
-                        <span className="flex items-center gap-1"><SaamyFace frac={1} size={14} /> everyone free</span>
+                        <span className="flex items-center gap-1"><AvailabilityLight frac={0} size={14} /> nobody free</span>
+                        <span className="flex items-center gap-1"><AvailabilityLight frac={0.5} size={14} /> half free</span>
+                        <span className="flex items-center gap-1"><AvailabilityLight frac={1} size={14} /> everyone free</span>
                       </>
                     ) : (
                       <>
@@ -1712,7 +1692,7 @@ export default function SyncApp() {
                             <div key={day} className="flex flex-col items-center gap-0.5">
                               <span className="mono" style={{ fontSize: 9, color: today ? "var(--marigold)" : "var(--mist)" }}>{day.toUpperCase()}</span>
                               <span className="mono flex items-center justify-center rounded-xl" style={{ width: 22, height: 22, background: today ? "var(--marigold)" : "transparent", color: today ? "var(--on-accent)" : "var(--paper)", fontSize: 12 }}>{date.getDate()}</span>
-                              {dayFrac !== null && <SaamyFace frac={dayFrac} size={14} title={`${Math.round(dayFrac * 100)}% free on average`} />}
+                              {dayFrac !== null && <AvailabilityLight frac={dayFrac} size={14} title={`${Math.round(dayFrac * 100)}% free on average`} />}
                             </div>
                           );
                         })}
@@ -1777,6 +1757,11 @@ export default function SyncApp() {
             {tab === "plans" && (
               <main className="px-5 pb-28 sync-tabpanel">
                 <p className="text-xs mb-4" style={{ color: "var(--mist)" }}>View details, RSVP, edit, or invite more people here — chat about a plan on Messages.</p>
+
+                <div className="mb-6">
+                  <PlansStack />
+                </div>
+
 
                 <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
                   <div className="sync-toggle-track flex items-center gap-1 w-fit rounded-xl p-1" style={{ background: "var(--ink-2)" }}>

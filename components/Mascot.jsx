@@ -11,9 +11,9 @@ import { DEFAULT_LOOK } from "./monkeyData";
 // every time.
 const POSES = {
   default: { rotate: 0, look: {}, extra: null },
-  point: { rotate: -6, look: {}, extra: "sparkle" },
+  point: { rotate: -6, look: { held: "Calendar" }, extra: "sparkle" },
   wave: { rotate: 6, look: { held: "Balloon" }, extra: null },
-  party: { rotate: -4, look: { eyes: "Heart glasses", held: "Balloon" }, extra: "confetti" },
+  party: { rotate: -4, look: { eyes: "Heart glasses", held: "Trophy" }, extra: "confetti" },
   chat: { rotate: 5, look: {}, extra: "bubble" },
   tickled: { rotate: 0, look: { eyes: "Heart glasses" }, extra: "laugh" },
 };
@@ -30,8 +30,9 @@ export function Saamy({ size = 72, bob = false, pose = "default", className = ""
       </span>
 
       {p.extra === "sparkle" && (
-        <svg width={size * 0.3} height={size * 0.3} viewBox="0 0 20 20" style={{ position: "absolute", top: "-6%", right: "-6%", pointerEvents: "none" }}>
-          <path d="M10 1 l2 6 6 2 -6 2 -2 6 -2-6-6-2 6-2z" fill="#F0C089" opacity="0.9" />
+        <svg width={size * 0.46} height={size * 0.46} viewBox="0 0 20 20" style={{ position: "absolute", top: "-10%", right: "-10%", pointerEvents: "none" }}>
+          <path d="M10 1 l2 6 6 2 -6 2 -2 6 -2-6-6-2 6-2z" fill="#FFD66B" opacity="0.95" />
+          <path d="M3 14 l1 3 3 1 -3 1 -1 3 -1-3-3-1 3-1z" fill="#FFD66B" opacity="0.8" />
         </svg>
       )}
       {p.extra === "confetti" && (
@@ -43,11 +44,11 @@ export function Saamy({ size = 72, bob = false, pose = "default", className = ""
         </svg>
       )}
       {p.extra === "bubble" && (
-        <svg width={size * 0.6} height={size * 0.42} viewBox="0 0 70 46" style={{ position: "absolute", top: "-16%", right: "-32%", pointerEvents: "none" }}>
-          <path d="M8 2 h54 a6 6 0 0 1 6 6 v16 a6 6 0 0 1 -6 6 h-30 l-10 10 2-10 h-16 a6 6 0 0 1 -6 -6 v-16 a6 6 0 0 1 6 -6 Z" fill="#F3F0E8" opacity="0.95" />
-          <circle cx="20" cy="17" r="2.6" fill="#8A7558" />
-          <circle cx="32" cy="17" r="2.6" fill="#8A7558" />
-          <circle cx="44" cy="17" r="2.6" fill="#8A7558" />
+        <svg width={size * 0.72} height={size * 0.5} viewBox="0 0 70 46" style={{ position: "absolute", top: "-28%", right: "-38%", pointerEvents: "none", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}>
+          <path d="M8 2 h54 a6 6 0 0 1 6 6 v16 a6 6 0 0 1 -6 6 h-30 l-10 10 2-10 h-16 a6 6 0 0 1 -6 -6 v-16 a6 6 0 0 1 6 -6 Z" fill="#F3F0E8" opacity="0.97" />
+          <circle cx="20" cy="17" r="3.1" fill="#8A7558" />
+          <circle cx="32" cy="17" r="3.1" fill="#8A7558" />
+          <circle cx="44" cy="17" r="3.1" fill="#8A7558" />
         </svg>
       )}
       {p.extra === "laugh" && (
